@@ -34,6 +34,7 @@ Restart OpenCode after copying the files. The installed layout is:
     └── godot_shader_reader/
         ├── binary-reader.ts
         ├── errors.ts
+        ├── input-path.ts
         ├── index.ts
         ├── resource.ts
         ├── rscc.ts
@@ -41,7 +42,7 @@ Restart OpenCode after copying the files. The installed layout is:
         └── variant.ts
 ```
 
-Global installation only changes tool discovery. Input paths are still resolved from the current `context.worktree`, and the tool will not read outside that worktree.
+Global installation only changes tool discovery. Absolute input paths may point anywhere readable by the OpenCode process. Relative input paths are resolved from the current `context.worktree`.
 
 ### Project-only installation (optional)
 
@@ -55,6 +56,7 @@ your-project/
         └── godot_shader_reader/
             ├── binary-reader.ts
             ├── errors.ts
+            ├── input-path.ts
             ├── index.ts
             ├── resource.ts
             ├── rscc.ts
@@ -70,18 +72,18 @@ Ask the agent to inspect a binary material, or call the tool explicitly:
 
 ```text
 godot-shader-read({
-  path: "assets/materials/example.material"
+  path: "/absolute/path/to/example.material"
 })
 ```
 
-Paths are resolved from `context.worktree`. Both lexical `..` traversal and symlink escape are rejected. The implementation only calls read operations and never rewrites, backs up, or re-saves the resource.
+Absolute paths are recommended when OpenCode is running the session in a temporary worktree. Relative paths are resolved from `context.worktree`. The tool accepts paths outside that worktree, but remains read-only: it never rewrites, backs up, or re-saves the resource.
 
 Successful output has this shape:
 
 ```json
 {
   "success": true,
-  "path": "path/to/example.material",
+  "path": "/absolute/path/to/example.material",
   "container": {
     "format": "RSCC",
     "compression": "zstd",
@@ -120,32 +122,30 @@ Failures return `success: false` and a structured `error` with a stable code. Un
 - `strings.ts`: Godot `UnicodeString` and string-table/inline `StringName` decoding.
 - `variant.ts`: the Godot 3.6 Variant subset needed by Shader/ShaderMaterial, plus common scalar, math, reference, and collection types.
 - `resource.ts`: header and resource tables, internal resource spans, property tables, and structural Shader linking.
+- `input-path.ts`: absolute and worktree-relative input-path resolution.
 - `index.ts`: public byte-oriented reader.
-- `godot-shader-read.ts`: OpenCode wrapper, path confinement, file I/O, and JSON errors.
+- `godot-shader-read.ts`: OpenCode wrapper, file I/O, and JSON errors.
 
 See [Godot 3.6 binary layout](docs/GODOT-3.6-FORMAT.md) for the byte-level design and official-source mapping.
 
 ## Test
 
-With Bun:
+Use Node.js 24 or newer from the repository root:
 
 ```bash
-bun test ./.opencode/tools/godot_shader_reader/tests/*.test.ts
+node --experimental-strip-types --test ".opencode/tools/godot_shader_reader/tests/*.test.ts"
 ```
 
-With Node.js 24 or newer:
+Node is the supported test runner because the suite uses `node:test`. Bun remains the production runtime supplied by OpenCode, but `bun test` is not supported for this suite.
 
-```bash
-node --experimental-strip-types --test .opencode/tools/godot_shader_reader/tests/*.test.ts
-```
-
-The suite contains 17 synthetic tests covering:
+The suite contains 19 synthetic tests covering:
 
 - RSCC sizes below, equal to, and above the block size, including exact multiples;
 - single-block and multi-block files;
 - invalid header, footer damage, compressed block damage, and decompressed-size mismatch;
 - uncompressed RSRC;
 - non-ShaderMaterial, missing Shader, missing code, unknown Variant, invalid magic, and truncation;
+- absolute paths outside `context.worktree` and relative-path resolution;
 - structural Shader extraction with exact string comparison against synthetic Godot 3.6 binary resources.
 
 Real project materials are intentionally not included in this public repository. Add private Golden Samples in your own test environment when validating project-specific resources.
