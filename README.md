@@ -31,7 +31,7 @@ Ask the agent to inspect a binary material, or call the tool explicitly:
 
 ```text
 godot-shader-read({
-  path: "native_core/path/to/M_AvpSRSpot.material"
+  path: "assets/materials/example.material"
 })
 ```
 
@@ -100,16 +100,16 @@ With Node.js 24 or newer:
 node --experimental-strip-types --test .opencode/tools/godot_shader_reader/tests/*.test.ts
 ```
 
-The suite contains 19 tests covering:
+The suite contains 17 synthetic tests covering:
 
 - RSCC sizes below, equal to, and above the block size, including exact multiples;
 - single-block and multi-block files;
 - invalid header, footer damage, compressed block damage, and decompressed-size mismatch;
 - uncompressed RSRC;
 - non-ShaderMaterial, missing Shader, missing code, unknown Variant, invalid magic, and truncation;
-- exact Shader string comparison for both supplied real Godot 3.6 materials.
+- structural Shader extraction with exact string comparison against synthetic Godot 3.6 binary resources.
 
-See [validation results](docs/VALIDATION.md) for the observed sample metadata and runtime results. The complete extracted sources are in `extracted/`; `manifest.json` records the exact embedded UTF-8 hash and terminal-newline state.
+Real project materials are intentionally not included in this public repository. Add private Golden Samples in your own test environment when validating project-specific resources.
 
 ## Current limits
 
