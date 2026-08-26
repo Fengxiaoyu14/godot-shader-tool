@@ -1,4 +1,5 @@
 import { BinaryReader } from "./binary-reader.ts"
+import { BinaryWriter } from "./binary-writer.ts"
 import { GodotReaderError } from "./errors.ts"
 
 const INLINE_STRING_FLAG = 0x80000000
@@ -27,6 +28,48 @@ export function readStringReference(reader: BinaryReader, stringTable: readonly 
   }
 
   return stringTable[id]
+}
+
+export function writeUnicodeString(writer: BinaryWriter, value: string): void {
+  const payload = encodeUtf8Exact(value)
+  writer.writeU32(payload.byteLength + 1)
+  writer.writeBytes(payload)
+  writer.writeU8(0)
+}
+
+export function writeStringReference(
+  writer: BinaryWriter,
+  value: string,
+  stringIndexes: ReadonlyMap<string, number>,
+): void {
+  const index = stringIndexes.get(value)
+  if (index !== undefined) {
+    writer.writeU32(index)
+    return
+  }
+
+  const payload = encodeUtf8Exact(value)
+  const storedLength = payload.byteLength + 1
+  if (storedLength > INLINE_STRING_LENGTH_MASK) {
+    throw new GodotReaderError("SERIALIZATION_FAILED", "Inline StringName is too large", {
+      details: { utf8_length: payload.byteLength },
+    })
+  }
+  writer.writeU32((INLINE_STRING_FLAG | storedLength) >>> 0)
+  writer.writeBytes(payload)
+  writer.writeU8(0)
+}
+
+export function encodeUtf8Exact(value: string): Uint8Array {
+  if (value.includes("\0")) {
+    throw new GodotReaderError("SERIALIZATION_FAILED", "Godot resource strings cannot contain embedded NUL bytes")
+  }
+  const encoded = new TextEncoder().encode(value)
+  const decoded = new TextDecoder("utf-8", { fatal: true }).decode(encoded)
+  if (decoded !== value) {
+    throw new GodotReaderError("SERIALIZATION_FAILED", "String is not losslessly encodable as UTF-8")
+  }
+  return encoded
 }
 
 function readNullTerminatedUtf8(

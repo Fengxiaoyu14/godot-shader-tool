@@ -2,7 +2,7 @@ import { BinaryReader } from "./binary-reader.ts"
 import { GodotReaderError } from "./errors.ts"
 import { readStringReference, readUnicodeString } from "./strings.ts"
 
-const VARIANT = {
+export const VARIANT = {
   NIL: 1,
   BOOL: 2,
   INT: 3,
@@ -34,7 +34,7 @@ const VARIANT = {
   DOUBLE: 41,
 } as const
 
-const OBJECT = {
+export const OBJECT = {
   EMPTY: 0,
   EXTERNAL_RESOURCE: 1,
   INTERNAL_RESOURCE: 2,

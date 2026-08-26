@@ -1,0 +1,6 @@
+[application]
+config/name="Godot Shader Writer Validation"
+run/main_scene=""
+
+[rendering]
+quality/driver/driver_name="GLES2"

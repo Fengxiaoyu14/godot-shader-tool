@@ -45,8 +45,11 @@ export interface BinaryResourceModel {
   stringTable: string[]
   externalResources: ExternalResource[]
   internalResources: InternalResourceEntry[]
+  parsedInternalResources: ParsedInternalResource[]
   footerOffset: number
 }
+
+export type GodotResource = BinaryResourceModel
 
 export interface ExtractedShaderResource {
   model: BinaryResourceModel
@@ -146,7 +149,7 @@ export function parseBinaryResource(bytes: Uint8Array, resourceHeaderOffset: num
     }
   }
 
-  return {
+  const model: BinaryResourceModel = {
     bytes,
     resourceHeaderOffset,
     bigEndian: false,
@@ -160,8 +163,13 @@ export function parseBinaryResource(bytes: Uint8Array, resourceHeaderOffset: num
     stringTable,
     externalResources,
     internalResources,
+    parsedInternalResources: [],
     footerOffset,
   }
+  for (let index = 0; index < internalResources.length; index++) {
+    model.parsedInternalResources.push(parseInternalResourceBody(model, index))
+  }
+  return model
 }
 
 export function extractShaderCode(model: BinaryResourceModel): ExtractedShaderResource {
@@ -215,10 +223,16 @@ export function extractShaderCode(model: BinaryResourceModel): ExtractedShaderRe
   }
 
   const codeProperty = shaderResource.properties.find((property) => property.name === "code")
-  if (codeProperty?.value.type !== "string" || typeof codeProperty.value.value !== "string") {
-    throw new GodotReaderError("SHADER_CODE_NOT_FOUND", "Internal Shader has no String code property", {
+  if (codeProperty === undefined) {
+    throw new GodotReaderError("SHADER_CODE_NOT_FOUND", "Internal Shader has no code property", {
       offset: shaderResource.offset,
       details: { subindex: shaderSubindex },
+    })
+  }
+  if (codeProperty.value.type !== "string" || typeof codeProperty.value.value !== "string") {
+    throw new GodotReaderError("SHADER_CODE_NOT_STRING", "Internal Shader.code is not a String Variant", {
+      offset: codeProperty.offset,
+      details: { subindex: shaderSubindex, variant_type_id: codeProperty.value.type_id },
     })
   }
   if (codeProperty.value.value.length === 0) {
@@ -238,6 +252,14 @@ export function extractShaderCode(model: BinaryResourceModel): ExtractedShaderRe
 }
 
 export function parseInternalResource(model: BinaryResourceModel, index: number): ParsedInternalResource {
+  const parsed = model.parsedInternalResources[index]
+  if (parsed !== undefined) {
+    return parsed
+  }
+  return parseInternalResourceBody(model, index)
+}
+
+function parseInternalResourceBody(model: BinaryResourceModel, index: number): ParsedInternalResource {
   const entry = model.internalResources[index]
   if (entry === undefined) {
     throw new GodotReaderError("INVALID_BINARY_RESOURCE", `Internal resource index ${index} is out of range`)

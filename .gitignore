@@ -1,0 +1,4 @@
+private-samples/
+node_modules/
+godot-validation/output.material
+godot-validation/expected.shader

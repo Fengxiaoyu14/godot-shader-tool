@@ -7,6 +7,7 @@ import {
   buildBinaryResource,
   minimalShaderMaterial,
   variantInternalResource,
+  variantNil,
   variantString,
   variantUnknown,
 } from "./fixture-builder.ts"
@@ -50,6 +51,22 @@ test("Shader without code is reported", () => {
     },
   ])
   expectCode(() => readGodot36Shader(bytes), "SHADER_CODE_NOT_FOUND")
+})
+
+test("Shader.code with a non-String Variant is reported", () => {
+  const bytes = buildBinaryResource("ShaderMaterial", [
+    {
+      path: "local://1",
+      type: "Shader",
+      properties: [{ name: "code", value: variantNil() }],
+    },
+    {
+      path: "res://test.material",
+      type: "ShaderMaterial",
+      properties: [{ name: "shader", value: variantInternalResource(1) }],
+    },
+  ])
+  expectCode(() => readGodot36Shader(bytes), "SHADER_CODE_NOT_STRING")
 })
 
 test("unknown Variant fails fast with resource/property/offset context", () => {

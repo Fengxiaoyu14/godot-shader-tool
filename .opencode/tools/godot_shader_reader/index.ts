@@ -1,5 +1,6 @@
-import { openGodotContainer, type ContainerMetadata, type ZstdDecoder } from "./rscc.ts"
-import { extractShaderCode, parseBinaryResource } from "./resource.ts"
+import { parseResource } from "./codec.ts"
+import { extractShaderCode } from "./resource.ts"
+import type { ContainerMetadata, ZstdDecoder } from "./rscc.ts"
 
 export interface ShaderReadResult {
   container: ContainerMetadata
@@ -22,12 +23,12 @@ export interface ShaderReadResult {
 }
 
 export function readGodot36Shader(bytes: Uint8Array, zstdDecoder?: ZstdDecoder): ShaderReadResult {
-  const opened = openGodotContainer(bytes, zstdDecoder)
-  const model = parseBinaryResource(opened.resourceBytes, opened.resourceHeaderOffset)
+  const parsed = parseResource(bytes, zstdDecoder)
+  const model = parsed.resource
   const extracted = extractShaderCode(model)
 
   return {
-    container: opened.metadata,
+    container: parsed.container,
     resource: {
       type: model.type,
       version_major: model.versionMajor,
@@ -50,3 +51,14 @@ export function readGodot36Shader(bytes: Uint8Array, zstdDecoder?: ZstdDecoder):
 export { GodotReaderError, toPublicError } from "./errors.ts"
 export { openGodotContainer, defaultZstdDecoder } from "./rscc.ts"
 export { extractShaderCode, parseBinaryResource, parseInternalResource } from "./resource.ts"
+export {
+  getShaderCode,
+  parseResource,
+  rewriteShaderCode,
+  serializeResource,
+  setShaderCode,
+  validateContainerPreserved,
+  validateShaderOnlyChange,
+} from "./codec.ts"
+export { defaultZstdEncoder, encodeGodotContainer } from "./rscc-writer.ts"
+export { serializeBinaryResource } from "./resource-writer.ts"

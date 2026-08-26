@@ -12,7 +12,11 @@ export interface EncodedResource {
   properties: EncodedProperty[]
 }
 
-export function buildBinaryResource(resourceType: string, resources: readonly EncodedResource[]): Uint8Array {
+export function buildBinaryResource(
+  resourceType: string,
+  resources: readonly EncodedResource[],
+  includeMagicHeader = true,
+): Uint8Array {
   const propertyNames = [...new Set(resources.flatMap((resource) => resource.properties.map((property) => property.name)))]
   const stringIndexes = new Map(propertyNames.map((name, index) => [name, index]))
 
@@ -28,7 +32,7 @@ export function buildBinaryResource(resourceType: string, resources: readonly En
   )
 
   const fixedHeader = concat(
-    ascii("RSRC"),
+    ...(includeMagicHeader ? [ascii("RSRC")] : []),
     u32(0),
     u32(0),
     u32(3),
@@ -90,7 +94,7 @@ export function buildRscc(payload: Uint8Array, blockSize: number): Uint8Array {
   )
 }
 
-export function minimalShaderMaterial(code = "shader_type spatial;\n"): Uint8Array {
+export function minimalShaderMaterial(code = "shader_type spatial;\n", includeMagicHeader = true): Uint8Array {
   return buildBinaryResource("ShaderMaterial", [
     {
       path: "local://1",
@@ -102,7 +106,7 @@ export function minimalShaderMaterial(code = "shader_type spatial;\n"): Uint8Arr
       type: "ShaderMaterial",
       properties: [{ name: "shader", value: variantInternalResource(1) }],
     },
-  ])
+  ], includeMagicHeader)
 }
 
 function requiredIndex(map: ReadonlyMap<string, number>, key: string): number {
