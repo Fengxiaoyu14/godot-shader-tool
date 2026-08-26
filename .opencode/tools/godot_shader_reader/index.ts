@@ -62,3 +62,11 @@ export {
 } from "./codec.ts"
 export { defaultZstdEncoder, encodeGodotContainer } from "./rscc-writer.ts"
 export { serializeBinaryResource } from "./resource-writer.ts"
+export { bundledValidatorPath, validateGodot36Shader } from "./validator.ts"
+export { validateShaderRequest } from "./validation-tool.ts"
+export type {
+  ShaderValidationFailure,
+  ShaderValidationResult,
+  ShaderValidationSuccess,
+  ShaderValidator,
+} from "./validator.ts"

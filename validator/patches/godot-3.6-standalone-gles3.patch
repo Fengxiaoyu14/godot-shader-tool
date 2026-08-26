@@ -1,0 +1,185 @@
+diff --git a/core/string_name.h b/core/string_name.h
+index deb8afc..ebc2192 100644
+--- a/core/string_name.h
++++ b/core/string_name.h
+@@ -89,6 +89,10 @@ class StringName {
+ 	StringName(_Data *p_data) { _data = p_data; }
+ 
+ public:
++#ifdef GODOT_SHADER_STANDALONE
++	static void setup_standalone() { setup(); }
++#endif
++
+ 	operator const void *() const { return (_data && (_data->cname || !_data->name.empty())) ? (void *)1 : nullptr; }
+ 
+ 	bool operator==(const String &p_name) const;
+diff --git a/servers/visual/shader_language.cpp b/servers/visual/shader_language.cpp
+index cb7c114..ebc77ba 100644
+--- a/servers/visual/shader_language.cpp
++++ b/servers/visual/shader_language.cpp
+@@ -31,7 +31,19 @@
+ #include "shader_language.h"
+ #include "core/os/os.h"
+ #include "core/print_string.h"
++#ifndef GODOT_SHADER_STANDALONE
+ #include "servers/visual_server.h"
++#endif
++
++#ifdef GODOT_SHADER_STANDALONE
++static _FORCE_INLINE_ bool _shader_language_is_low_end() {
++	return false;
++}
++#else
++static _FORCE_INLINE_ bool _shader_language_is_low_end() {
++	return VisualServer::get_singleton()->is_low_end();
++}
++#endif
+ 
+ static bool _is_text_char(CharType c) {
+ 	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_';
+@@ -2236,7 +2248,7 @@ bool ShaderLanguage::_validate_function_call(BlockNode *p_block, OperatorNode *p
+ 				}
+ 
+ 				if (!fail) {
+-					if (VisualServer::get_singleton()->is_low_end()) {
++					if (_shader_language_is_low_end()) {
+ 						if (builtin_func_defs[idx].high_end) {
+ 							fail = true;
+ 							unsupported_builtin = true;
+@@ -4785,7 +4797,7 @@ Error ShaderLanguage::_parse_block(BlockNode *p_block, const Map<StringName, Bui
+ 				if (tk.type == TK_BRACKET_OPEN) {
+ 					bool unknown_size = false;
+ 
+-					if (VisualServer::get_singleton()->is_low_end() && is_const) {
++					if (_shader_language_is_low_end() && is_const) {
+ 						_set_error("Local const arrays are only supported on the GLES3 backend, but your project is using GLES2.");
+ 						return ERR_PARSE_ERROR;
+ 					}
+@@ -4829,7 +4841,7 @@ Error ShaderLanguage::_parse_block(BlockNode *p_block, const Map<StringName, Bui
+ 
+ 					tk = _get_token();
+ 					if (tk.type == TK_OP_ASSIGN) {
+-						if (VisualServer::get_singleton()->is_low_end()) {
++						if (_shader_language_is_low_end()) {
+ 							_set_error("Array initialization is only supported on the GLES3 backend, but your project is using GLES2.");
+ 							return ERR_PARSE_ERROR;
+ 						}
+@@ -5146,7 +5158,7 @@ Error ShaderLanguage::_parse_block(BlockNode *p_block, const Map<StringName, Bui
+ 				_set_tkpos(pos); //rollback
+ 			}
+ 		} else if (tk.type == TK_CF_SWITCH) {
+-			if (VisualServer::get_singleton()->is_low_end()) {
++			if (_shader_language_is_low_end()) {
+ 				_set_error("\"switch\" operator is only supported on the GLES3 backend, but your project is using GLES2.");
+ 				return ERR_PARSE_ERROR;
+ 			}
+@@ -5639,7 +5651,7 @@ String ShaderLanguage::_get_qualifier_str(ArgumentQualifier p_qualifier) const {
+ }
+ 
+ Error ShaderLanguage::_validate_datatype(DataType p_type) {
+-	if (VisualServer::get_singleton()->is_low_end()) {
++	if (_shader_language_is_low_end()) {
+ 		bool invalid_type = false;
+ 
+ 		switch (p_type) {
+@@ -6274,7 +6286,7 @@ Error ShaderLanguage::_parse_shader(const Map<StringName, FunctionInfo> &p_funct
+ 						bool unknown_size = false;
+ 
+ 						if (tk.type == TK_BRACKET_OPEN) {
+-							if (VisualServer::get_singleton()->is_low_end()) {
++							if (_shader_language_is_low_end()) {
+ 								_set_error("Global const arrays are supported only on high-end platform!");
+ 								return ERR_PARSE_ERROR;
+ 							}
+@@ -7053,7 +7065,7 @@ Error ShaderLanguage::complete(const String &p_code, const Map<StringName, Funct
+ 				}
+ 
+ 				int idx = 0;
+-				bool low_end = VisualServer::get_singleton()->is_low_end();
++				bool low_end = _shader_language_is_low_end();
+ 
+ 				while (builtin_func_defs[idx].name) {
+ 					if (low_end && builtin_func_defs[idx].high_end) {
+@@ -7066,7 +7078,7 @@ Error ShaderLanguage::complete(const String &p_code, const Map<StringName, Funct
+ 
+ 			} else { // sub-class
+ 				int idx = 0;
+-				bool low_end = VisualServer::get_singleton()->is_low_end();
++				bool low_end = _shader_language_is_low_end();
+ 
+ 				while (builtin_func_defs[idx].name) {
+ 					if (low_end && builtin_func_defs[idx].high_end) {
+@@ -7140,7 +7152,7 @@ Error ShaderLanguage::complete(const String &p_code, const Map<StringName, Funct
+ 			int idx = 0;
+ 
+ 			String calltip;
+-			bool low_end = VisualServer::get_singleton()->is_low_end();
++			bool low_end = _shader_language_is_low_end();
+ 
+ 			while (builtin_func_defs[idx].name) {
+ 				if (low_end && builtin_func_defs[idx].high_end) {
+diff --git a/servers/visual/shader_mode_standalone.h b/servers/visual/shader_mode_standalone.h
+new file mode 100644
+index 0000000..03f8490
+--- /dev/null
++++ b/servers/visual/shader_mode_standalone.h
+@@ -0,0 +1,43 @@
++/**************************************************************************/
++/*  shader_mode_standalone.h                                             */
++/**************************************************************************/
++/*                         This file is part of:                          */
++/*                             GODOT ENGINE                               */
++/*                        https://godotengine.org                         */
++/**************************************************************************/
++/* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
++/* Copyright (c) 2007-2014 Juan Linietsky, Ariel Manzur.                  */
++/*                                                                        */
++/* Permission is hereby granted, free of charge, to any person obtaining  */
++/* a copy of this software and associated documentation files (the        */
++/* "Software"), to deal in the Software without restriction, including   */
++/* without limitation the rights to use, copy, modify, merge, publish,    */
++/* distribute, sublicense, and/or sell copies of the Software, and to     */
++/* permit persons to whom the Software is furnished to do so, subject to  */
++/* the following conditions:                                              */
++/*                                                                        */
++/* The above copyright notice and this permission notice shall be         */
++/* included in all copies or substantial portions of the Software.        */
++/*                                                                        */
++/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
++/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
++/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
++/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
++/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
++/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
++/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
++/**************************************************************************/
++
++#ifndef SHADER_MODE_STANDALONE_H
++#define SHADER_MODE_STANDALONE_H
++
++namespace VS {
++enum ShaderMode {
++	SHADER_SPATIAL,
++	SHADER_CANVAS_ITEM,
++	SHADER_PARTICLES,
++	SHADER_MAX
++};
++}
++
++#endif // SHADER_MODE_STANDALONE_H
+diff --git a/servers/visual/shader_types.h b/servers/visual/shader_types.h
+index 779e004..36d61d1 100644
+--- a/servers/visual/shader_types.h
++++ b/servers/visual/shader_types.h
+@@ -32,7 +32,11 @@
+ #define SHADER_TYPES_H
+ 
+ #include "core/ordered_hash_map.h"
++#ifdef GODOT_SHADER_STANDALONE
++#include "shader_mode_standalone.h"
++#else
+ #include "servers/visual_server.h"
++#endif
+ #include "shader_language.h"
+ 
+ class ShaderTypes {

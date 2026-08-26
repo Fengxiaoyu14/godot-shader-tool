@@ -2,15 +2,15 @@ import { tool } from "@opencode-ai/plugin"
 import { realpath, stat } from "node:fs/promises"
 import path from "node:path"
 
-import { toPublicError } from "./godot_shader_reader/errors.ts"
+import { GodotReaderError, toPublicError } from "./godot_shader_reader/errors.ts"
 import { writeGodotShaderFile } from "./godot_shader_reader/file-writer.ts"
 import { resolveInputPath } from "./godot_shader_reader/input-path.ts"
 
 export default tool({
   description:
     "Replace the complete Shader.code stored in an existing Godot 3.6 binary ShaderMaterial (.material/.res). " +
-    "This is a write operation: it fully parses and reserializes the resource, writes a sibling temporary file, " +
-    "reads it back, verifies that only Shader.code changed, and only then safely replaces the original file.",
+    "This is a write operation: it requires official Godot 3.6 GLES3 validation before serialization and again " +
+    "after exact temp-file read-back, verifies that only Shader.code changed, and only then safely replaces the original.",
   args: {
     path: tool.schema
       .string()
@@ -35,10 +35,24 @@ export default tool({
       const result = await writeGodotShaderFile(resolved, args.shader_code)
       return JSON.stringify({ success: true, path: resolved.split(path.sep).join("/"), ...result }, null, 2)
     } catch (error) {
-      return JSON.stringify({ success: false, error: toPublicError(error) }, null, 2)
+      return JSON.stringify({
+        success: false,
+        error: toPublicError(error),
+        ...(originalIsKnownPreserved(error) ? { original_preserved: true } : {}),
+      }, null, 2)
     }
   },
 })
+
+function originalIsKnownPreserved(error: unknown): boolean {
+  return error instanceof GodotReaderError && (
+    error.code === "SHADER_VALIDATION_FAILED" ||
+    error.code === "SHADER_VALIDATOR_UNAVAILABLE" ||
+    error.code === "SHADER_VALIDATOR_FAILED" ||
+    error.code === "SHADER_VALIDATOR_TIMEOUT" ||
+    error.code === "INVALID_VALIDATOR_RESPONSE"
+  )
+}
 
 function failure(code: "FILE_NOT_FOUND", message: string): string {
   return JSON.stringify({ success: false, error: { code, message } }, null, 2)

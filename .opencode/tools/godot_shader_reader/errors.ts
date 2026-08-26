@@ -16,6 +16,12 @@ export type GodotReaderErrorCode =
   | "SHADER_CODE_NOT_FOUND"
   | "SHADER_CODE_NOT_STRING"
   | "INVALID_SHADER_CODE"
+  | "INVALID_VALIDATE_ARGUMENTS"
+  | "SHADER_VALIDATION_FAILED"
+  | "SHADER_VALIDATOR_UNAVAILABLE"
+  | "SHADER_VALIDATOR_FAILED"
+  | "SHADER_VALIDATOR_TIMEOUT"
+  | "INVALID_VALIDATOR_RESPONSE"
   | "UNSUPPORTED_VARIANT_FOR_WRITE"
   | "UNSUPPORTED_RESOURCE_FOR_WRITE"
   | "SERIALIZATION_FAILED"
@@ -31,12 +37,14 @@ export type GodotReaderErrorCode =
 export interface PublicError {
   code: GodotReaderErrorCode
   message: string
+  line?: number
   offset?: number
   details?: Record<string, unknown>
 }
 
 export class GodotReaderError extends Error {
   readonly code: GodotReaderErrorCode
+  readonly line?: number
   readonly offset?: number
   readonly details?: Record<string, unknown>
 
@@ -44,6 +52,7 @@ export class GodotReaderError extends Error {
     code: GodotReaderErrorCode,
     message: string,
     options: {
+      line?: number
       offset?: number
       details?: Record<string, unknown>
       cause?: unknown
@@ -52,6 +61,7 @@ export class GodotReaderError extends Error {
     super(message, options.cause === undefined ? undefined : { cause: options.cause })
     this.name = "GodotReaderError"
     this.code = code
+    this.line = options.line
     this.offset = options.offset
     this.details = options.details
   }
@@ -62,6 +72,7 @@ export function toPublicError(error: unknown): PublicError {
     return {
       code: error.code,
       message: error.message,
+      ...(error.line === undefined ? {} : { line: error.line }),
       ...(error.offset === undefined ? {} : { offset: error.offset }),
       ...(error.details === undefined ? {} : { details: error.details }),
     }

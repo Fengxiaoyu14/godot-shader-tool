@@ -7,6 +7,8 @@ import { zstdCompressSync, zstdDecompressSync } from "node:zlib"
 
 import { readGodot36Shader } from "../index.ts"
 import { writeGodotShaderFile } from "../file-writer.ts"
+import { GodotReaderError } from "../errors.ts"
+import { validateGodot36Shader } from "../validator.ts"
 
 const goldenPath = process.env.GODOT_SHADER_GOLDEN
 const decode = (bytes: Uint8Array): Uint8Array => zstdDecompressSync(bytes)
@@ -24,9 +26,12 @@ test("private Golden Material supports no-op, shorter, longer, Unicode, and mult
   t.after(() => rm(directory, { recursive: true, force: true }))
   const targetPath = path.join(directory, path.basename(sourcePath))
 
+  const originalValidation = await validateGodot36Shader(originalCode)
+  assert.equal(originalValidation.valid, true, "the Golden Shader must compile as Godot 3.6 GLES3")
+
   const cases = [
     originalCode,
-    originalCode.slice(0, Math.max(1, Math.floor(originalCode.length / 2))),
+    "shader_type spatial;\nvoid fragment() { ALBEDO = vec3(0.25); }\n",
     `${originalCode}\n${"// longer Golden Shader\n".repeat(200)}`,
     `${originalCode}\n// 控制远处的渐变\r\n// UTF-8 与 CRLF\r\n${"// cross 4096 block\n".repeat(400)}`,
   ]
@@ -38,9 +43,27 @@ test("private Golden Material supports no-op, shorter, longer, Unicode, and mult
       requested,
       bunAvailable ? {} : { zstdDecoder: decode, zstdEncoder: encode },
     )
-    assert.equal(result.validation.read_back, true)
+    assert.equal(result.validation.pre_write_shader, true)
+    assert.equal(result.validation.resource_read_back, true)
     assert.equal(result.validation.shader_code_match, true)
-    assert.equal(result.validation.only_shader_changed, true)
+    assert.equal(result.validation.semantic_diff, true)
+    assert.equal(result.validation.post_write_shader, true)
     assert.equal(readGodot36Shader(await readFile(targetPath), bunAvailable ? undefined : decode).shader.code, requested)
+  }
+
+  for (const invalid of [
+    "shader_type spatial;\nvoid fragment() { ALBEDO = vec3(1.0) }\n",
+    "shader_type spatial;\nvoid fragment() { ALBEDO = missing_value; }\n",
+  ]) {
+    await writeFile(targetPath, originalBytes)
+    await assert.rejects(
+      () => writeGodotShaderFile(
+        targetPath,
+        invalid,
+        bunAvailable ? {} : { zstdDecoder: decode, zstdEncoder: encode },
+      ),
+      (error: unknown) => error instanceof GodotReaderError && error.code === "SHADER_VALIDATION_FAILED",
+    )
+    assert.deepEqual(await readFile(targetPath), originalBytes)
   }
 })

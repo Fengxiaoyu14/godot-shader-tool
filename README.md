@@ -1,17 +1,25 @@
-# Godot 3.6 Shader Read/Write Tools for OpenCode
+# Godot 3.6 Shader Validate/Read/Write Tools for OpenCode
 
-This project provides two OpenCode Custom Tools for Godot **3.6** binary `ShaderMaterial` resources:
+This repository provides three OpenCode custom tools for Godot **3.6** binary
+`ShaderMaterial` resources:
 
+- `godot-shader-validate` validates source directly or extracts it from a
+  `.material`/`.res` through the shared binary codec.
 - `godot-shader-read` reads the complete embedded `Shader.code`.
-- `godot-shader-write` replaces the complete `Shader.code`, fully reserializes the resource, validates a sibling temporary file, and only then replaces the original.
+- `godot-shader-write` replaces the complete `Shader.code` only after mandatory
+  validation before serialization and again from the actual temp-file read-back.
 
-Global installation is recommended so the tools are available in every worktree. The implementation follows Godot `3.6-stable` commit [`de2f0f147c5b7eff2d0f6dbc35042a4173fd59be`](https://github.com/godotengine/godot/tree/de2f0f147c5b7eff2d0f6dbc35042a4173fd59be). It does not scan for shader-looking text, use fixed offsets, splice binary bytes, or patch later offsets by a Shader-length delta.
+Validation uses the official Godot `ShaderLanguage` and `ShaderTypes` sources at
+`3.6-stable` commit
+[`de2f0f147c5b7eff2d0f6dbc35042a4173fd59be`](https://github.com/godotengine/godot/tree/de2f0f147c5b7eff2d0f6dbc35042a4173fd59be).
+The validator is fixed to GLES3 (`low_end=false`). It does not start Godot,
+load a project, open a window, create an OpenGL context, or access a GPU. There
+is no custom parser, regex validator, `glslang`, or selectable backend.
 
 ## Install
 
-### Global installation (recommended)
-
-OpenCode discovers global custom tools in `~/.config/opencode/tools/`. Run the following commands from the root of this repository.
+Global installation is recommended so the tools are available in every
+worktree. From this repository's root, copy the complete tools directory.
 
 macOS/Linux:
 
@@ -28,82 +36,107 @@ New-Item -ItemType Directory -Force $target | Out-Null
 Copy-Item ".\.opencode\tools\*" $target -Recurse -Force
 ```
 
-Restart OpenCode after copying the files. The installed layout is:
+Restart OpenCode after copying. The important installed paths are:
 
 ```text
-~/.config/opencode/
-└── tools/
-    ├── godot-shader-read.ts
-    ├── godot-shader-write.ts
-    └── godot_shader_reader/
-        ├── binary-reader.ts
-        ├── binary-writer.ts
-        ├── codec.ts
-        ├── errors.ts
-        ├── file-writer.ts
-        ├── input-path.ts
-        ├── index.ts
-        ├── resource.ts
-        ├── resource-writer.ts
-        ├── rscc.ts
-        ├── rscc-writer.ts
-        ├── strings.ts
-        ├── variant.ts
-        └── variant-writer.ts
+tools/
+├── godot-shader-read.ts
+├── godot-shader-validate.ts
+├── godot-shader-write.ts
+├── bin/
+│   ├── linux-x64/godot-shader-validator
+│   └── windows-x64/godot-shader-validator.exe
+└── godot_shader_reader/
+    ├── codec.ts
+    ├── file-writer.ts
+    ├── validation-tool.ts
+    ├── validator.ts
+    └── ...
 ```
 
-Add the following entries to your global or project `opencode.json` so reads are automatic but writes require confirmation:
+The executable path is resolved relative to `validator.ts`, never from the
+current working directory. Linux x64 and Windows x64 are bundled. Unsupported
+platforms or architectures fail closed.
+
+Configure reads and validation as automatic, while keeping writes behind a
+confirmation prompt:
 
 ```json
 {
   "permission": {
     "godot-shader-read": "allow",
+    "godot-shader-validate": "allow",
     "godot-shader-write": "ask"
   }
 }
 ```
 
-OpenCode supplies `@opencode-ai/plugin` and Bun. RSCC/ZSTD input needs `Bun.zstdDecompressSync`; RSCC output needs `Bun.zstdCompressSync`.
-
-### Project-only installation (optional)
-
-To make the tools available in one repository only, copy `.opencode` and `opencode.json` to that worktree's root:
-
-```text
-your-project/
-├── opencode.json
-└── .opencode/
-    └── tools/
-        ├── godot-shader-read.ts
-        ├── godot-shader-write.ts
-        └── godot_shader_reader/
-            └── ...
-```
+For project-only installation, copy `.opencode` and `opencode.json` into that
+project's root. OpenCode supplies `@opencode-ai/plugin` and Bun. RSCC/ZSTD input
+uses `Bun.zstdDecompressSync`; RSCC output uses `Bun.zstdCompressSync`.
 
 ## Use
 
-Read the complete Shader source:
+Validate a complete source string:
+
+```text
+godot-shader-validate({
+  shader_code: "shader_type spatial;\nvoid fragment() { ALBEDO = vec3(1.0); }"
+})
+```
+
+Or validate the Shader embedded in a binary material:
+
+```text
+godot-shader-validate({
+  path: "/absolute/path/to/example.material"
+})
+```
+
+Exactly one of `shader_code` or `path` is required. A valid response is:
+
+```json
+{
+  "valid": true,
+  "godot_version": "3.6",
+  "renderer": "gles3",
+  "shader_type": "spatial"
+}
+```
+
+An ordinary shader error is data, not a tool crash:
+
+```json
+{
+  "valid": false,
+  "godot_version": "3.6",
+  "renderer": "gles3",
+  "shader_type": "spatial",
+  "error": {
+    "line": 2,
+    "message": "Unknown identifier in expression: missing_value"
+  }
+}
+```
+
+Read and replace complete Shader source with:
 
 ```text
 godot-shader-read({
   path: "/absolute/path/to/example.material"
 })
-```
 
-Replace it with a complete source string:
-
-```text
 godot-shader-write({
   path: "/absolute/path/to/example.material",
   shader_code: "shader_type spatial;\n..."
 })
 ```
 
-Absolute paths are recommended when OpenCode runs the session in a temporary worktree. Relative paths are resolved from `context.worktree`. Both tools accept paths outside that worktree when the OpenCode process has OS permission; the write tool still requires the configured `ask` confirmation.
+Absolute paths are recommended for temporary OpenCode worktrees. Relative paths
+resolve from `context.worktree`. Source is stored exactly; the writer does not
+trim, format, or normalize LF/CRLF.
 
-`shader_code` must be non-empty. It is stored exactly: the writer does not trim, format, normalize indentation, or convert LF/CRLF. It deliberately does not try to compile or regex-validate Godot Shader syntax.
-
-A successful write returns compact metadata rather than echoing the complete Shader:
+A successful write returns compact metadata:
 
 ```json
 {
@@ -111,64 +144,104 @@ A successful write returns compact metadata rather than echoing the complete Sha
   "path": "/absolute/path/to/example.material",
   "resource_type": "ShaderMaterial",
   "validation": {
-    "read_back": true,
+    "pre_write_shader": true,
+    "resource_read_back": true,
     "shader_code_match": true,
-    "only_shader_changed": true
+    "semantic_diff": true,
+    "post_write_shader": true
   },
-  "before": {
-    "shader_length": 1401
-  },
-  "after": {
-    "shader_length": 1732
-  }
+  "before": { "shader_length": 1401 },
+  "after": { "shader_length": 1732 }
 }
 ```
 
 ## Write safety
 
-Every write follows this sequence:
+Every write follows this order:
 
 ```text
-read original
-→ parse complete resource IR
-→ replace existing Shader.code
-→ fully serialize every header/table/resource body
-→ recompute all internal-resource offsets
-→ rebuild RSCC blocks when applicable
+officially validate requested Shader
+→ read and parse the complete original resource
+→ replace only the existing Shader.code in the typed IR
+→ fully serialize headers, tables, resources, and RSCC blocks
 → write and fsync a unique sibling temp file
-→ read the temp file through the shared reader
+→ parse the actual temp bytes through the shared reader
 → require exact Shader.code equality
-→ semantic-diff every resource and property
-→ verify the original did not change concurrently
-→ replace the original
+→ semantic-diff every resource/property except Shader.code
+→ officially validate Shader.code extracted from that read-back
+→ verify the original bytes did not change concurrently
+→ safely replace the original
 ```
 
-Only the located `Shader.code` String Variant may differ. Resource versions, container strategy, external resources, internal paths/order/types, property names/order, object references, Shader parameters, and all other Variant values must remain equal.
+Missing executable, startup failure, timeout, malformed JSON, nonstandard exit,
+invalid shader, serialization failure, read-back failure, mismatch, or semantic
+change all stop before replacement. The original remains unchanged. POSIX uses a
+same-directory atomic rename. Windows uses a recoverable two-stage rename and
+restores the original if the destination step fails.
 
-Before replacement, parse, serialization, compression, temporary-file, read-back, or validation failures leave the original untouched. POSIX uses same-directory atomic `rename`. Windows uses a recoverable two-stage replacement because replacing an existing destination has different platform semantics; if the second rename fails, the original is restored.
+Only the located `Shader.code` String Variant may differ. Resource versions,
+container strategy, external resources, internal paths/order/types, property
+names/order, object references, Shader parameters, and all other Variant values
+must remain equal.
 
-## Shared IR and codec
+## Standalone validator CLI
 
-The reader parses every internal resource into a shared, typed model:
+The native CLI accepts stdin or a shader file and writes one JSON object to
+stdout. Diagnostics never share stdout.
 
-```typescript
-interface GodotResource {
-  bigEndian: boolean
-  useReal64: boolean
-  versionMajor: number
-  versionMinor: number
-  formatVersion: number
-  type: string
-  importMetadataOffset: number
-  reservedFields: number[]
-  stringTable: string[]
-  externalResources: ExternalResource[]
-  internalResources: InternalResourceEntry[]
-  parsedInternalResources: ParsedInternalResource[]
-}
+```bash
+printf '%s' 'shader_type spatial;' |
+  .opencode/tools/bin/linux-x64/godot-shader-validator --stdin
+
+.opencode/tools/bin/linux-x64/godot-shader-validator \
+  --file validator/tests/shaders/valid-spatial.gdshader
 ```
 
-Each property retains its Godot Variant `type_id`, modeled type, and value. The public codec flow is:
+Exit codes are `0` for valid, `1` for a shader error, `2` for an internal
+validator failure, and `3` for invalid/unreadable input.
+
+## Build the validator
+
+The build scripts pin and verify Godot's exact commit, apply the standalone
+patch, build a sectioned Core archive, link only the needed sections, and copy
+artifacts to their stable module-relative locations.
+
+Required host commands are Git, Python/SCons, CMake, Ninja, a Linux C++ compiler,
+binutils, Node.js, and a POSIX MinGW-w64 x86-64 toolchain. MinGW must provide the
+`x86_64-w64-mingw32-*` compiler, binutils, `gcc-ar`, `gcc-ranlib`, and `windres`
+commands.
+
+```bash
+# Optional: reuse an already checked-out exact Godot tree.
+export GODOT_SOURCE_DIR=/absolute/path/to/godot-3.6
+
+# Default VALIDATOR_JOBS is 1 for reliable static-archive creation.
+validator/scripts/build-all.sh
+```
+
+Individual commands are also available:
+
+```bash
+validator/scripts/build-native.sh
+validator/scripts/test-native.sh
+validator/scripts/build-windows-x64.sh
+validator/scripts/inspect-windows.sh
+```
+
+The Windows executable is statically linked with libgcc/libstdc++. PE inspection
+allows only `KERNEL32.dll` and `msvcrt.dll`; it rejects Godot, OpenGL, or other
+runtime DLL imports. See
+[`validator/README_GODOT_PATCHES.md`](validator/README_GODOT_PATCHES.md) for the
+nine-call GLES3 adaptation, minimal initialization analysis, stubs, and license.
+
+Current artifact hashes are recorded in
+[`validator/SHA256SUMS`](validator/SHA256SUMS). Godot's MIT license is retained in
+[`validator/LICENSE.txt`](validator/LICENSE.txt).
+
+## Shared IR and supported writes
+
+The reader parses all internal resources into one typed model. The public codec
+flow is:
 
 ```typescript
 const parsed = parseResource(bytes)
@@ -177,63 +250,71 @@ setShaderCode(parsed.resource, replacement)
 const output = serializeResource(parsed)
 ```
 
-The original table offsets remain available for diagnostics only. `resource-writer.ts` always reserves and patches a new offset table from actual writer positions.
+The original offsets remain diagnostic data only. Serialization reserves and
+patches a new internal-resource offset table from actual writer positions.
 
-## Supported Variant write subset
-
-The writer supports every non-deprecated Variant currently supported by the reader:
+The writer supports every non-deprecated Variant supported by the reader:
 
 - Nil, Bool, Int, Int64, Real, Double, and String;
-- Vector2, Rect2, Vector3, Plane, Quat, AABB, Basis, Transform, Transform2D, and Color;
+- Vector2, Rect2, Vector3, Plane, Quat, AABB, Basis, Transform, Transform2D,
+  and Color;
 - NodePath and RID;
-- empty, internal, indexed external, and legacy inline external Object references;
+- empty, internal, indexed external, and legacy inline external Object refs;
 - Dictionary and Array;
-- PoolByteArray, PoolIntArray, PoolRealArray, PoolStringArray, PoolVector2Array, PoolVector3Array, and PoolColorArray.
+- all Godot 3.x Pool array types.
 
-Unknown types fail with `UNSUPPORTED_VARIANT_FOR_WRITE`; they are never skipped, zeroed, guessed, or preserved as opaque byte spans.
+Unknown types fail with `UNSUPPORTED_VARIANT_FOR_WRITE`; they are never guessed,
+zeroed, skipped, or retained as opaque byte spans.
 
 ## Test
 
-Use Node.js 24 or newer from the repository root:
+Run the complete Node.js 24+ suite:
 
 ```bash
-node --experimental-strip-types --test ".opencode/tools/godot_shader_reader/tests/*.test.ts"
+node --experimental-strip-types --test \
+  .opencode/tools/godot_shader_reader/tests/*.test.ts
 ```
 
-Bun 1.4 or newer can run the same suite:
+It covers the codec and every supported Variant; official syntax, unknown-name,
+built-in, render-mode, `uint/uvec`, array, and `switch` validation; direct/path
+validation; validator unavailable/bad-JSON/timeout/internal failures; pre/post
+write validation and unchanged originals; Windows restore behavior; and an
+OpenCode validate→write→read wrapper E2E flow.
+
+Run the standalone CLI fixture matrix separately with:
 
 ```bash
-bun test ./.opencode/tools/godot_shader_reader/tests/*.test.ts
+validator/scripts/test-native.sh
 ```
 
-The synthetic suite covers absolute/worktree-relative paths, primitive writer growth/patching, UTF-8 strings, every supported Variant, RSRC and RSCC semantic round-trips, the Godot exact-multiple empty-block rule, shorter/longer Shader offsets, multi-block growth, Unicode, LF/CRLF, temporary-file cleanup, failure-before-replace safety, and forced Windows restore behavior.
-
-Real project materials are intentionally excluded from this public repository. Run the same no-op/shorter/longer/Unicode/multi-block test against a private Golden Sample with:
+To add a private real Godot 3.6 material as a Golden Sample:
 
 ```bash
-GODOT_SHADER_GOLDEN=/absolute/path/to/M_AvpSRSpot.material \
+GODOT_SHADER_GOLDEN=/absolute/path/to/example.material \
 node --experimental-strip-types --test \
   .opencode/tools/godot_shader_reader/tests/golden-material.test.ts
 ```
 
-For an independent engine-load check, place a Writer output at `godot-validation/output.material` and run:
-
-```bash
-Godot_v3.6-stable_linux_headless.64 \
-  --path godot-validation \
-  -s godot-validation/validate_material.gd
-```
-
-The validation script requires Godot to load a `ShaderMaterial` with a non-null `Shader`. Godot's 3.6 headless build uses a null VisualServer, so it cannot independently return `Shader.code`; exact code equality remains enforced by the Writer's byte-level read-back.
+The Golden test validates the original source, performs valid no-op/shorter/
+longer/Unicode/multi-block writes, and verifies that syntax and identifier
+errors preserve the original bytes. Private material content is never committed.
 
 ## Current limits
 
-- Exactly Godot 3.6 (`version_major=3`, `version_minor=6`, binary `format_version=3`).
+- Exactly Godot 3.6 (`version_major=3`, `version_minor=6`, binary
+  `format_version=3`) and GLES3 shader semantics.
 - Little-endian resources only.
 - RSCC compression mode `2` (ZSTD) and uncompressed RSRC only.
-- Writer requires `import_metadata_offset == 0`; import metadata payloads are not modeled.
-- Root resource must already be `ShaderMaterial`; `shader` must already reference an internal `Shader`; `code` must already be a non-empty String Variant.
+- Writer requires `import_metadata_offset == 0`; import metadata payloads are not
+  modeled.
+- Root resource must already be `ShaderMaterial`; `shader` must reference an
+  internal `Shader`; `code` must already be a non-empty String Variant.
 - Deprecated embedded Image and InputEvent Variants are unsupported.
-- No Godot 4.x, scene recursion, texture decoding, shader compilation, partial text patches, new resources, or resource/property insertion/deletion.
+- No Godot 4.x, scene recursion, texture decoding, partial text patches, new
+  resources, or resource/property insertion/deletion.
+- Bundled validator executables currently cover x64 Linux and x64 Windows.
 
-See [docs/GODOT-3.6-FORMAT.md](docs/GODOT-3.6-FORMAT.md) for the byte layout and official Loader/Saver source mapping, and [docs/WRITER-VALIDATION.md](docs/WRITER-VALIDATION.md) for synthetic, private real-material, Bun/Node, failure-safety, OpenCode wrapper, and Godot executable results.
+See [`docs/GODOT-3.6-FORMAT.md`](docs/GODOT-3.6-FORMAT.md) for binary layout and
+official Loader/Saver mapping, and
+[`docs/WRITER-VALIDATION.md`](docs/WRITER-VALIDATION.md) for the recorded test,
+native runtime, and PE inspection results.
