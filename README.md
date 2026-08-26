@@ -1,12 +1,51 @@
 # Godot 3.6 ShaderMaterial Reader for OpenCode
 
-`godot-shader-read` is a project-level, read-only OpenCode Custom Tool. It reads a Godot **3.6** binary `.material` or `.res`, follows `ShaderMaterial.shader` to its internal `Shader` resource, and returns the complete `Shader.code` string.
+`godot-shader-read` is a read-only OpenCode Custom Tool. It reads a Godot **3.6** binary `.material` or `.res`, follows `ShaderMaterial.shader` to its internal `Shader` resource, and returns the complete `Shader.code` string. Global installation is recommended so the tool is available in every worktree.
 
 The implementation follows Godot `3.6-stable` commit `de2f0f147c5b7eff2d0f6dbc35042a4173fd59be`. It does not locate shaders by scanning for `shader_type`, `code`, the longest string, or a fixed sample offset.
 
 ## Install
 
-Copy the included `.opencode` directory to the root of the target git worktree:
+### Global installation (recommended)
+
+OpenCode discovers global custom tools in `~/.config/opencode/tools/`. Run the following commands from the root of this repository.
+
+macOS/Linux:
+
+```bash
+mkdir -p ~/.config/opencode/tools
+cp -R .opencode/tools/. ~/.config/opencode/tools/
+```
+
+Windows PowerShell:
+
+```powershell
+$target = "$HOME\.config\opencode\tools"
+New-Item -ItemType Directory -Force $target | Out-Null
+Copy-Item ".\.opencode\tools\*" $target -Recurse -Force
+```
+
+Restart OpenCode after copying the files. The installed layout is:
+
+```text
+~/.config/opencode/
+└── tools/
+    ├── godot-shader-read.ts
+    └── godot_shader_reader/
+        ├── binary-reader.ts
+        ├── errors.ts
+        ├── index.ts
+        ├── resource.ts
+        ├── rscc.ts
+        ├── strings.ts
+        └── variant.ts
+```
+
+Global installation only changes tool discovery. Input paths are still resolved from the current `context.worktree`, and the tool will not read outside that worktree.
+
+### Project-only installation (optional)
+
+To make the tool available only in one repository, copy the included `.opencode` directory to that git worktree's root:
 
 ```text
 your-project/
