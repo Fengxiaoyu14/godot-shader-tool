@@ -1,6 +1,6 @@
 # Godot 3.6 Shader validator/writer verification
 
-Verification date: 2026-08-26.
+Verification date: 2026-08-27.
 
 ## Authority and build environment
 
@@ -18,7 +18,7 @@ OpenGL context, or GPU was used.
 
 ## Automated results
 
-The Node suite reports 105 tests: 104 pass and one private Golden Material test
+The Node suite reports 106 tests: 105 pass and one private Golden Material test
 skips when `GODOT_SHADER_GOLDEN` is unset. The standalone CLI matrix adds 13
 successful checks for file/stdin modes, JSON-only output, exit codes, all shader
 classes, and positive/negative language fixtures.
@@ -53,9 +53,11 @@ Tests force each of these states and require a structured, fail-closed error:
 - internal/nonstandard process exit;
 - ordinary shader rejection.
 
-The OpenCode wrapper test copies the production tools and bundled native binary
-to a clean temporary layout, loads all three wrapper modules through an
-API-compatible `@opencode-ai/plugin` test shim, and performs:
+The release-package smoke test stages the production tools and the current
+platform's bundled native binary in a clean temporary installation layout. It
+first rejects any packaged `tests/`, `*.test.ts`, or fixture-builder content,
+then loads all three wrapper modules through an API-compatible
+`@opencode-ai/plugin` test shim and performs:
 
 ```text
 direct validation

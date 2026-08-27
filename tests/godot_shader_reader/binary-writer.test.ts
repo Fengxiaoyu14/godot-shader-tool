@@ -1,8 +1,8 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
-import { BinaryReader } from "../binary-reader.ts"
-import { BinaryWriter } from "../binary-writer.ts"
+import { BinaryReader } from "../../.opencode/tools/godot_shader_reader/binary-reader.ts"
+import { BinaryWriter } from "../../.opencode/tools/godot_shader_reader/binary-writer.ts"
 
 test("BinaryWriter grows, reserves, and patches Godot primitives", () => {
   const writer = new BinaryWriter()

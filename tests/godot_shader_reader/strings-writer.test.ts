@@ -1,9 +1,9 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
-import { BinaryReader } from "../binary-reader.ts"
-import { BinaryWriter } from "../binary-writer.ts"
-import { readStringReference, readUnicodeString, writeStringReference, writeUnicodeString } from "../strings.ts"
+import { BinaryReader } from "../../.opencode/tools/godot_shader_reader/binary-reader.ts"
+import { BinaryWriter } from "../../.opencode/tools/godot_shader_reader/binary-writer.ts"
+import { readStringReference, readUnicodeString, writeStringReference, writeUnicodeString } from "../../.opencode/tools/godot_shader_reader/strings.ts"
 
 for (const value of ["", "ASCII", "中文注释", "line 1\nline 2", "line 1\r\nline 2", "𝄞 music"]) {
   test(`UnicodeString round-trips ${JSON.stringify(value)}`, () => {

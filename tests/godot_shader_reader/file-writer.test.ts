@@ -5,10 +5,10 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import { zstdDecompressSync } from "node:zlib"
 
-import { readGodot36Shader } from "../index.ts"
-import { replaceFileSafely, writeGodotShaderFile } from "../file-writer.ts"
-import { GodotReaderError } from "../errors.ts"
-import type { ShaderValidator } from "../validator.ts"
+import { readGodot36Shader } from "../../.opencode/tools/godot_shader_reader/index.ts"
+import { replaceFileSafely, writeGodotShaderFile } from "../../.opencode/tools/godot_shader_reader/file-writer.ts"
+import { GodotReaderError } from "../../.opencode/tools/godot_shader_reader/errors.ts"
+import type { ShaderValidator } from "../../.opencode/tools/godot_shader_reader/validator.ts"
 import { buildRscc, minimalShaderMaterial } from "./fixture-builder.ts"
 
 const alwaysValid: ShaderValidator = async () => ({

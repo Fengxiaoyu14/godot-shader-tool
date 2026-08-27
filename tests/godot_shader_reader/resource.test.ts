@@ -1,8 +1,8 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
-import { GodotReaderError } from "../errors.ts"
-import { readGodot36Shader } from "../index.ts"
+import { GodotReaderError } from "../../.opencode/tools/godot_shader_reader/errors.ts"
+import { readGodot36Shader } from "../../.opencode/tools/godot_shader_reader/index.ts"
 import {
   buildBinaryResource,
   minimalShaderMaterial,

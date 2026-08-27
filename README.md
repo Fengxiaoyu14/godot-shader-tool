@@ -19,7 +19,8 @@ is no custom parser, regex validator, `glslang`, or selectable backend.
 ## Install
 
 Global installation is recommended so the tools are available in every
-worktree. From this repository's root, copy the complete tools directory.
+worktree. The `.opencode/tools` directory contains runtime files only, so it
+can be copied directly from a source checkout.
 
 macOS/Linux:
 
@@ -53,6 +54,11 @@ tools/
     ├── validator.ts
     └── ...
 ```
+
+GitHub Release archives are platform-specific and use the same installable
+`tools/` layout. After extracting an archive, copy its complete `tools`
+directory to `~/.config/opencode/tools`. Release archives intentionally omit
+the source-only test suite, fixtures, native sources, and build scripts.
 
 The executable path is resolved relative to `validator.ts`, never from the
 current working directory. Linux x64 and Windows x64 are bundled. Unsupported
@@ -238,6 +244,20 @@ Current artifact hashes are recorded in
 [`validator/SHA256SUMS`](validator/SHA256SUMS). Godot's MIT license is retained in
 [`validator/LICENSE.txt`](validator/LICENSE.txt).
 
+## Build release packages
+
+From a complete source checkout, build the Linux x64 and Windows x64
+installation archives with:
+
+```bash
+node scripts/release-package.mjs v1.1.0
+```
+
+The archives and their `SHA256SUMS` file are written to `dist/`. Each archive
+contains only one platform's validator, the runtime `tools/` tree, the README,
+an OpenCode configuration example, and Godot's license. Packaging fails if any
+`tests/`, `*.test.ts`, or fixture-builder content enters the staged artifact.
+
 ## Shared IR and supported writes
 
 The reader parses all internal resources into one typed model. The public codec
@@ -272,7 +292,7 @@ Run the complete Node.js 24+ suite:
 
 ```bash
 node --experimental-strip-types --test \
-  .opencode/tools/godot_shader_reader/tests/*.test.ts
+  tests/godot_shader_reader/*.test.ts
 ```
 
 It covers the codec and every supported Variant; official syntax, unknown-name,
@@ -280,6 +300,11 @@ built-in, render-mode, `uint/uvec`, array, and `switch` validation; direct/path
 validation; validator unavailable/bad-JSON/timeout/internal failures; pre/post
 write validation and unchanged originals; Windows restore behavior; and an
 OpenCode validate→write→read wrapper E2E flow.
+
+Tests are source-checkout-only and are not installed under
+`~/.config/opencode/tools`. The release-package smoke test stages the same
+runtime layout shipped to users, confirms that it contains no test content, and
+runs validate→write→read from that staged directory.
 
 Run the standalone CLI fixture matrix separately with:
 
@@ -292,7 +317,7 @@ To add a private real Godot 3.6 material as a Golden Sample:
 ```bash
 GODOT_SHADER_GOLDEN=/absolute/path/to/example.material \
 node --experimental-strip-types --test \
-  .opencode/tools/godot_shader_reader/tests/golden-material.test.ts
+  tests/godot_shader_reader/golden-material.test.ts
 ```
 
 The Golden test validates the original source, performs valid no-op/shorter/

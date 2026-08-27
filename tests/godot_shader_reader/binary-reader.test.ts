@@ -1,8 +1,8 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
-import { BinaryReader } from "../binary-reader.ts"
-import { GodotReaderError } from "../errors.ts"
+import { BinaryReader } from "../../.opencode/tools/godot_shader_reader/binary-reader.ts"
+import { GodotReaderError } from "../../.opencode/tools/godot_shader_reader/errors.ts"
 
 test("BinaryReader performs bounds checks with a structured error", () => {
   const reader = new BinaryReader(new Uint8Array([1, 2, 3]), "test buffer")

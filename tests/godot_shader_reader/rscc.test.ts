@@ -2,8 +2,8 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import { zstdDecompressSync } from "node:zlib"
 
-import { GodotReaderError } from "../errors.ts"
-import { openGodotContainer } from "../rscc.ts"
+import { GodotReaderError } from "../../.opencode/tools/godot_shader_reader/errors.ts"
+import { openGodotContainer } from "../../.opencode/tools/godot_shader_reader/rscc.ts"
 import { buildRscc } from "./fixture-builder.ts"
 
 const decode = (bytes: Uint8Array): Uint8Array => zstdDecompressSync(bytes)

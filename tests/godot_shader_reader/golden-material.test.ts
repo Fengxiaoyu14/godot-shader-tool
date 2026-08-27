@@ -5,10 +5,10 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import { zstdCompressSync, zstdDecompressSync } from "node:zlib"
 
-import { readGodot36Shader } from "../index.ts"
-import { writeGodotShaderFile } from "../file-writer.ts"
-import { GodotReaderError } from "../errors.ts"
-import { validateGodot36Shader } from "../validator.ts"
+import { readGodot36Shader } from "../../.opencode/tools/godot_shader_reader/index.ts"
+import { writeGodotShaderFile } from "../../.opencode/tools/godot_shader_reader/file-writer.ts"
+import { GodotReaderError } from "../../.opencode/tools/godot_shader_reader/errors.ts"
+import { validateGodot36Shader } from "../../.opencode/tools/godot_shader_reader/validator.ts"
 
 const goldenPath = process.env.GODOT_SHADER_GOLDEN
 const decode = (bytes: Uint8Array): Uint8Array => zstdDecompressSync(bytes)

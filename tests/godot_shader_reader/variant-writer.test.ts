@@ -1,11 +1,11 @@
 import assert from "node:assert/strict"
 import test from "node:test"
 
-import { BinaryReader } from "../binary-reader.ts"
-import { BinaryWriter } from "../binary-writer.ts"
-import { GodotReaderError } from "../errors.ts"
-import { VARIANT, parseVariant, type ExternalResource, type VariantValue } from "../variant.ts"
-import { writeVariant } from "../variant-writer.ts"
+import { BinaryReader } from "../../.opencode/tools/godot_shader_reader/binary-reader.ts"
+import { BinaryWriter } from "../../.opencode/tools/godot_shader_reader/binary-writer.ts"
+import { GodotReaderError } from "../../.opencode/tools/godot_shader_reader/errors.ts"
+import { VARIANT, parseVariant, type ExternalResource, type VariantValue } from "../../.opencode/tools/godot_shader_reader/variant.ts"
+import { writeVariant } from "../../.opencode/tools/godot_shader_reader/variant-writer.ts"
 
 const externalResources: ExternalResource[] = [{ type: "Texture", path: "res://texture.png" }]
 const stringTable = ["root"]

@@ -8,9 +8,9 @@ import {
   rewriteShaderCode,
   serializeResource,
   validateShaderOnlyChange,
-} from "../codec.ts"
-import { GodotReaderError } from "../errors.ts"
-import { openGodotContainer } from "../rscc.ts"
+} from "../../.opencode/tools/godot_shader_reader/codec.ts"
+import { GodotReaderError } from "../../.opencode/tools/godot_shader_reader/errors.ts"
+import { openGodotContainer } from "../../.opencode/tools/godot_shader_reader/rscc.ts"
 import { buildRscc, minimalShaderMaterial } from "./fixture-builder.ts"
 
 const encode = (bytes: Uint8Array): Uint8Array => zstdCompressSync(bytes)
@@ -75,7 +75,9 @@ test("RSCC writer preserves ZSTD mode and block size across a block-boundary cha
 
 for (const size of [7, 8, 9, 16, 19]) {
   test(`RSCC encoder follows Godot block count at logical size ${size}`, async () => {
-    const { encodeGodotContainer } = await import("../rscc-writer.ts")
+    const { encodeGodotContainer } = await import(
+      "../../.opencode/tools/godot_shader_reader/rscc-writer.ts"
+    )
     const logical = new Uint8Array(size).fill(0x61)
     logical.set(new TextEncoder().encode("RSRC"), size - 4)
     const physical = encodeGodotContainer(logical, {

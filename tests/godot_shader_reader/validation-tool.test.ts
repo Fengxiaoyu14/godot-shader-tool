@@ -4,9 +4,9 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 
-import { GodotReaderError } from "../errors.ts"
-import { validateShaderRequest } from "../validation-tool.ts"
-import type { ShaderValidator } from "../validator.ts"
+import { GodotReaderError } from "../../.opencode/tools/godot_shader_reader/errors.ts"
+import { validateShaderRequest } from "../../.opencode/tools/godot_shader_reader/validation-tool.ts"
+import type { ShaderValidator } from "../../.opencode/tools/godot_shader_reader/validator.ts"
 import { minimalShaderMaterial } from "./fixture-builder.ts"
 
 test("validation request accepts direct shader_code without touching a resource", async () => {

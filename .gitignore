@@ -1,5 +1,6 @@
 private-samples/
 node_modules/
+dist/
 validator/.build/
 godot-validation/output.material
 godot-validation/expected.shader

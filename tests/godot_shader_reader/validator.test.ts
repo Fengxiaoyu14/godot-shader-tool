@@ -5,10 +5,10 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 
-import { GodotReaderError } from "../errors.ts"
-import { bundledValidatorPath, validateGodot36Shader } from "../validator.ts"
+import { GodotReaderError } from "../../.opencode/tools/godot_shader_reader/errors.ts"
+import { bundledValidatorPath, validateGodot36Shader } from "../../.opencode/tools/godot_shader_reader/validator.ts"
 
-const fixtureDirectory = fileURLToPath(new URL("../../../../validator/tests/shaders/", import.meta.url))
+const fixtureDirectory = fileURLToPath(new URL("../../validator/tests/shaders/", import.meta.url))
 
 test("bundled validator uses official Godot 3.6 GLES3 semantics", async (t) => {
   const cases = [

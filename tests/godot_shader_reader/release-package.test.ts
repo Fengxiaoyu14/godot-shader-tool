@@ -1,26 +1,50 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { chmod, cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 
+import {
+  findForbiddenTestContent,
+  RELEASE_PLATFORMS,
+  stageReleasePackage,
+} from "../../scripts/release-package.mjs"
 import { minimalShaderMaterial } from "./fixture-builder.ts"
 
-const repositoryRoot = fileURLToPath(new URL("../../../../", import.meta.url))
+const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url))
+const releasePlatform = process.arch !== "x64"
+  ? undefined
+  : process.platform === "linux"
+    ? "linux-x64"
+    : process.platform === "win32"
+      ? "windows-x64"
+      : undefined
 
-test("OpenCode validate/write/read wrappers work end to end", { skip: process.platform !== "linux" }, async (t) => {
+test("every staged release package excludes tests and non-target binaries", async (t) => {
+  const directory = await mkdtemp(path.join(tmpdir(), "godot-release-layout-"))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+
+  for (const platform of Object.keys(RELEASE_PLATFORMS)) {
+    const staged = await stageReleasePackage(repositoryRoot, path.join(directory, platform), platform)
+    assert.deepEqual(await findForbiddenTestContent(staged.root), [], platform)
+    assert.deepEqual(await readdir(path.join(staged.tools, "bin")), [platform], platform)
+  }
+})
+
+test("host release package passes validate/write/read smoke", {
+  skip: releasePlatform === undefined ? "No release package is available for this host" : false,
+}, async (t) => {
   const directory = await mkdtemp(path.join(tmpdir(), "godot-opencode-e2e-"))
   t.after(() => rm(directory, { recursive: true, force: true }))
-  await cp(path.join(repositoryRoot, ".opencode/tools"), path.join(directory, ".opencode/tools"), {
-    recursive: true,
-  })
-  await chmod(
-    path.join(directory, ".opencode/tools/bin/linux-x64/godot-shader-validator"),
-    0o700,
-  )
+  const packageRoot = path.join(directory, "package")
+  const staged = await stageReleasePackage(repositoryRoot, packageRoot, releasePlatform!)
+  assert.deepEqual(await findForbiddenTestContent(packageRoot), [])
+  if (process.platform !== "win32") {
+    await chmod(staged.validator, 0o700)
+  }
 
-  const pluginDirectory = path.join(directory, "node_modules/@opencode-ai/plugin")
+  const pluginDirectory = path.join(packageRoot, "node_modules/@opencode-ai/plugin")
   await mkdir(pluginDirectory, { recursive: true })
   await writeFile(path.join(pluginDirectory, "package.json"), JSON.stringify({
     name: "@opencode-ai/plugin",
@@ -36,13 +60,13 @@ test("OpenCode validate/write/read wrappers work end to end", { skip: process.pl
   )
 
   const validateTool = (await import(pathToFileURL(
-    path.join(directory, ".opencode/tools/godot-shader-validate.ts"),
+    path.join(staged.tools, "godot-shader-validate.ts"),
   ).href)).default
   const writeTool = (await import(pathToFileURL(
-    path.join(directory, ".opencode/tools/godot-shader-write.ts"),
+    path.join(staged.tools, "godot-shader-write.ts"),
   ).href)).default
   const readTool = (await import(pathToFileURL(
-    path.join(directory, ".opencode/tools/godot-shader-read.ts"),
+    path.join(staged.tools, "godot-shader-read.ts"),
   ).href)).default
   const context = { worktree: directory }
   const validSource = "shader_type spatial;\nvoid fragment() { ALBEDO = vec3(0.4); }\n"
