@@ -1,17 +1,12 @@
 import { randomUUID } from "node:crypto"
-import { open, readFile, rename, unlink } from "node:fs/promises"
+import { open, readFile, realpath, rename, unlink } from "node:fs/promises"
 import path from "node:path"
 
-import {
-  parseResource,
-  rewriteShaderCode,
-  validateContainerPreserved,
-  validateShaderOnlyChange,
-  type ZstdDecoder,
-  type ZstdEncoder,
-} from "./codec.ts"
+import type { ZstdDecoder } from "./rscc.ts"
+import type { ZstdEncoder } from "./rscc-writer.ts"
+import { readGodotShaderFile } from "./file-reader.ts"
+import { prepareShaderWrite } from "./shader-rewrite.ts"
 import { GodotReaderError } from "./errors.ts"
-import { extractShaderCode } from "./resource.ts"
 import {
   validateGodot36Shader,
   type ShaderValidationResult,
@@ -28,6 +23,10 @@ export interface ShaderWriteValidation {
 
 export interface ShaderFileWriteResult {
   resource_type: string
+  written_path: string
+  source: "embedded" | "external" | "standalone"
+  shared_shader?: true
+  resource_path?: string
   validation: ShaderWriteValidation
   before: { shader_length: number }
   after: { shader_length: number }
@@ -37,6 +36,8 @@ export interface ShaderFileWriteOptions {
   zstdDecoder?: ZstdDecoder
   zstdEncoder?: ZstdEncoder
   shaderValidator?: ShaderValidator
+  projectRoot?: string
+  shaderPath?: string
 }
 
 export interface SafeReplaceOptions {
@@ -54,13 +55,16 @@ export async function writeGodotShaderFile(
   const shaderValidator = options.shaderValidator ?? validateGodot36Shader
   await requireValidShader(shaderCode, shaderValidator, "pre_write")
 
+  const inputPath = await realpath(targetPath)
+  const inputBytes = await readFile(inputPath)
+  const located = await readGodotShaderFile(inputPath, options)
+  targetPath = located.shader.path
   const originalBytes = await readFile(targetPath)
-  const rewritten = rewriteShaderCode(
-    originalBytes,
-    shaderCode,
-    options.zstdDecoder,
-    options.zstdEncoder,
-  )
+  // Refuse to proceed if either input changed during resolution.
+  if (!bytesEqual(inputBytes, await readFile(inputPath))) {
+    throw new GodotReaderError("UNEXPECTED_RESOURCE_CHANGE", "Input changed during Shader resolution")
+  }
+  const rewritten = prepareShaderWrite(originalBytes, targetPath, shaderCode, options)
 
   const tempPath = siblingPath(targetPath, "opencode-tmp")
   let tempExists = false
@@ -80,18 +84,20 @@ export async function writeGodotShaderFile(
       })
     }
 
-    let readBack
+    let verifiedCode: string
     try {
       const tempBytes = await readFile(tempPath)
-      readBack = parseResource(tempBytes, options.zstdDecoder)
+      verifiedCode = rewritten.verify(tempBytes)
     } catch (cause) {
-      throw new GodotReaderError("READ_BACK_FAILED", "Sibling temporary file could not be read back", { cause })
+      if (cause instanceof GodotReaderError && ["SHADER_VERIFY_FAILED", "UNEXPECTED_RESOURCE_CHANGE"].includes(cause.code)) throw cause
+      throw new GodotReaderError("READ_BACK_FAILED", "Sibling temporary file could not be verified", { cause })
     }
-    validateContainerPreserved(rewritten.before.container, readBack.container)
-    const validation = validateShaderOnlyChange(rewritten.before.resource, readBack.resource, shaderCode)
-    const afterShader = extractShaderCode(readBack.resource)
-    await requireValidShader(afterShader.code, shaderValidator, "post_write")
+    await requireValidShader(verifiedCode, shaderValidator, "post_write")
 
+    const currentLocation = await readGodotShaderFile(inputPath, options)
+    if (currentLocation.shader.path !== targetPath || !bytesEqual(inputBytes, await readFile(inputPath))) {
+      throw new GodotReaderError("UNEXPECTED_RESOURCE_CHANGE", "Input or Shader reference changed while preparing the write")
+    }
     const currentBytes = await readFile(targetPath)
     if (!bytesEqual(originalBytes, currentBytes)) {
       throw new GodotReaderError(
@@ -102,18 +108,20 @@ export async function writeGodotShaderFile(
 
     await replaceFileSafely(tempPath, targetPath)
     tempExists = false
-    const beforeShader = extractShaderCode(rewritten.before.resource)
     return {
-      resource_type: readBack.resource.type,
+      resource_type: rewritten.resourceType,
+      written_path: targetPath,
+      source: located.shader.source,
+      ...(located.shader.source === "external" ? { shared_shader: true as const, resource_path: located.shader.resource_path } : {}),
       validation: {
         pre_write_shader: true,
-        resource_read_back: validation.read_back,
-        shader_code_match: validation.shader_code_match,
-        semantic_diff: validation.only_shader_changed,
+        resource_read_back: true,
+        shader_code_match: true,
+        semantic_diff: true,
         post_write_shader: true,
       },
-      before: { shader_length: beforeShader.code.length },
-      after: { shader_length: afterShader.code.length },
+      before: { shader_length: rewritten.beforeCode.length },
+      after: { shader_length: verifiedCode.length },
     }
   } finally {
     if (tempExists) {

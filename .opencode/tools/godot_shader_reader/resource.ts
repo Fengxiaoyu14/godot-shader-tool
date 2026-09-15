@@ -4,7 +4,7 @@ import { readStringReference, readUnicodeString } from "./strings.ts"
 import { parseVariant, type ExternalResource, type VariantValue } from "./variant.ts"
 
 const GODOT_VERSION_MAJOR = 3
-const GODOT_VERSION_MINOR = 6
+const GODOT_VERSION_MINORS = [5, 6]
 const BINARY_FORMAT_VERSION = 3
 const RESERVED_FIELD_COUNT = 14
 const MAGIC_RSRC = "RSRC"
@@ -88,10 +88,10 @@ export function parseBinaryResource(bytes: Uint8Array, resourceHeaderOffset: num
 
   if (
     versionMajor !== GODOT_VERSION_MAJOR ||
-    versionMinor !== GODOT_VERSION_MINOR ||
+    !GODOT_VERSION_MINORS.includes(versionMinor) ||
     formatVersion !== BINARY_FORMAT_VERSION
   ) {
-    throw new GodotReaderError("UNSUPPORTED_RESOURCE_VERSION", "Only Godot 3.6 binary format version 3 is supported", {
+    throw new GodotReaderError("UNSUPPORTED_RESOURCE_VERSION", "Only Godot 3.5/3.6 binary format version 3 is supported", {
       offset: resourceHeaderOffset + VERSION_FIELDS_OFFSET,
       details: {
         version_major: versionMajor,
@@ -172,7 +172,15 @@ export function parseBinaryResource(bytes: Uint8Array, resourceHeaderOffset: num
   return model
 }
 
-export function extractShaderCode(model: BinaryResourceModel): ExtractedShaderResource {
+export type MaterialShaderReference =
+  | { kind: "internal"; index: number }
+  | { kind: "external"; path: string; type: string; index?: number }
+
+export function getMaterialShaderReference(model: BinaryResourceModel): {
+  root: ParsedInternalResource
+  property: ResourceProperty
+  reference: MaterialShaderReference
+} {
   if (model.type !== "ShaderMaterial") {
     throw new GodotReaderError("NOT_SHADER_MATERIAL", `Expected ShaderMaterial but found ${model.type}`, {
       details: { resource_type: model.type },
@@ -194,18 +202,60 @@ export function extractShaderCode(model: BinaryResourceModel): ExtractedShaderRe
 
   const shaderProperty = root.properties.find((property) => property.name === "shader")
   const shaderReference = shaderProperty?.value.value
-  if (
-    shaderProperty?.value.type !== "object" ||
-    !isRecord(shaderReference) ||
-    shaderReference.kind !== "internal_resource" ||
-    typeof shaderReference.index !== "number"
-  ) {
-    throw new GodotReaderError("SHADER_NOT_FOUND", "ShaderMaterial.shader is not an internal Shader resource reference", {
+  if (shaderProperty?.value.type !== "object" || !isRecord(shaderReference)) {
+    throw new GodotReaderError("SHADER_NOT_FOUND", "ShaderMaterial.shader is missing or is not a resource reference", {
       offset: shaderProperty?.offset,
     })
   }
+  if (shaderReference.kind === "internal_resource" && typeof shaderReference.index === "number") {
+    return { root, property: shaderProperty, reference: { kind: "internal", index: shaderReference.index } }
+  }
+  const external = shaderReference.kind === "external_resource_index"
+    ? shaderReference.resource
+    : shaderReference.kind === "external_resource" ? shaderReference : undefined
+  if (isRecord(external) && typeof external.path === "string" && typeof external.type === "string") {
+    if (external.type !== "Shader") {
+      throw new GodotReaderError("NOT_SHADER_RESOURCE", `Shader reference has type ${external.type}, not Shader`, {
+        offset: shaderProperty.offset,
+        details: { dependency_path: external.path, resource_type: external.type },
+      })
+    }
+    return {
+      root, property: shaderProperty,
+      reference: {
+        kind: "external", path: external.path, type: external.type,
+        ...(typeof shaderReference.index === "number" ? { index: shaderReference.index } : {}),
+      },
+    }
+  }
+  throw new GodotReaderError("SHADER_NOT_FOUND", "ShaderMaterial.shader is empty or is not a supported resource reference", {
+    offset: shaderProperty.offset,
+  })
+}
 
-  const shaderSubindex = shaderReference.index
+export function extractShaderCode(model: BinaryResourceModel): ExtractedShaderResource {
+  if (model.type === "Shader") {
+    const root = model.parsedInternalResources.at(-1)
+    if (!root || root.type !== "Shader") {
+      throw new GodotReaderError("NOT_SHADER_RESOURCE", "Binary Shader has no Shader root")
+    }
+    const property = root.properties.find((item) => item.name === "code")
+    if (!property) throw new GodotReaderError("SHADER_CODE_NOT_FOUND", "Shader has no code property")
+    if (property.value.type !== "string" || typeof property.value.value !== "string") {
+      throw new GodotReaderError("SHADER_CODE_NOT_STRING", "Shader.code must be a String")
+    }
+    if (!property.value.value.length) throw new GodotReaderError("SHADER_CODE_NOT_FOUND", "Shader.code is empty")
+    // A standalone root uses subindex 0 in the codec; file APIs expose source=standalone.
+    return { model, root, shaderResource: root, shaderSubindex: 0, code: property.value.value }
+  }
+  const { root, property: shaderProperty, reference } = getMaterialShaderReference(model)
+  if (reference.kind === "external") {
+    throw new GodotReaderError("EXTERNAL_SHADER_REQUIRES_FILE", "Shader is external; use readGodotShaderFile to resolve its file", {
+      offset: shaderProperty.offset,
+      details: { dependency_path: reference.path, resource_type: reference.type },
+    })
+  }
+  const shaderSubindex = reference.index
   const shaderIndex = model.internalResources.findIndex((entry) => entry.path === `local://${shaderSubindex}`)
   if (shaderIndex < 0) {
     throw new GodotReaderError("SHADER_NOT_FOUND", `Internal Shader local://${shaderSubindex} is missing`, {

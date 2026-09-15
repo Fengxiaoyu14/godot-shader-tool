@@ -89,8 +89,8 @@ function validateWritableResource(resource: GodotResource): void {
   if (resource.bigEndian) {
     throw new GodotReaderError("UNSUPPORTED_RESOURCE_FOR_WRITE", "Big-endian resources cannot be written safely")
   }
-  if (resource.versionMajor !== 3 || resource.versionMinor !== 6 || resource.formatVersion !== 3) {
-    throw new GodotReaderError("UNSUPPORTED_RESOURCE_FOR_WRITE", "Only Godot 3.6 binary format version 3 can be written")
+  if (resource.versionMajor !== 3 || ![5, 6].includes(resource.versionMinor) || resource.formatVersion !== 3) {
+    throw new GodotReaderError("UNSUPPORTED_RESOURCE_FOR_WRITE", "Only Godot 3.5/3.6 binary format version 3 can be written")
   }
   if (resource.importMetadataOffset !== 0) {
     throw new GodotReaderError(

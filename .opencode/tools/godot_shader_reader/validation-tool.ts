@@ -1,18 +1,19 @@
-import { readFile, realpath, stat } from "node:fs/promises"
-
-import { parseResource } from "./codec.ts"
+import { readGodotShaderFile } from "./file-reader.ts"
 import { GodotReaderError } from "./errors.ts"
 import { resolveInputPath } from "./input-path.ts"
-import { extractShaderCode } from "./resource.ts"
+import type { ZstdDecoder } from "./rscc.ts"
 import { validateGodot36Shader, type ShaderValidationResult, type ShaderValidator } from "./validator.ts"
 
 export interface ShaderValidationRequest {
   shader_code?: string
   path?: string
+  project_root?: string
+  shader_path?: string
 }
 
 export interface ShaderValidationRequestOptions {
   validator?: ShaderValidator
+  zstdDecoder?: ZstdDecoder
 }
 
 export async function validateShaderRequest(
@@ -31,21 +32,16 @@ export async function validateShaderRequest(
 
   const validator = options.validator ?? validateGodot36Shader
   if (hasShaderCode) {
+    if (request.project_root !== undefined || request.shader_path !== undefined) {
+      throw new GodotReaderError("INVALID_VALIDATE_ARGUMENTS", "project_root and shader_path require path input")
+    }
     return validator(request.shader_code!)
   }
 
-  const requested = resolveInputPath(request.path!, worktree)
-  let resolved: string
-  try {
-    resolved = await realpath(requested)
-  } catch (cause) {
-    throw new GodotReaderError("FILE_NOT_FOUND", `File not found: ${request.path}`, { cause })
-  }
-  const fileStat = await stat(resolved)
-  if (!fileStat.isFile()) {
-    throw new GodotReaderError("FILE_NOT_FOUND", `Not a regular file: ${request.path}`)
-  }
-
-  const material = parseResource(await readFile(resolved))
-  return validator(extractShaderCode(material.resource).code)
+  const result = await readGodotShaderFile(resolveInputPath(request.path!, worktree), {
+    ...(request.project_root === undefined ? {} : { projectRoot: resolveInputPath(request.project_root, worktree) }),
+    ...(request.shader_path === undefined ? {} : { shaderPath: resolveInputPath(request.shader_path, worktree) }),
+    zstdDecoder: options.zstdDecoder,
+  })
+  return validator(result.shader.code)
 }

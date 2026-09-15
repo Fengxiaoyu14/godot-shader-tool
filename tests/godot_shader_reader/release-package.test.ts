@@ -10,7 +10,7 @@ import {
   RELEASE_PLATFORMS,
   stageReleasePackage,
 } from "../../scripts/release-package.mjs"
-import { minimalShaderMaterial } from "./fixture-builder.ts"
+import { externalShaderMaterial, minimalShaderMaterial } from "./fixture-builder.ts"
 
 const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url))
 const releasePlatform = process.arch !== "x64"
@@ -105,4 +105,31 @@ test("host release package passes validate/write/read smoke", {
   assert.equal(invalidResult.error.code, "SHADER_VALIDATION_FAILED")
   assert.equal(invalidResult.original_preserved, true)
   assert.deepEqual(await readFile(materialPath), bytesBeforeInvalidWrite)
+
+  // Exercise the installed wrappers and relative option paths, not only the library API.
+  const externalPath = path.join(directory, "external.material")
+  const shaderPath = path.join(directory, "renamed.tres")
+  await writeFile(externalPath, externalShaderMaterial("res://renamed.tres"))
+  await writeFile(shaderPath, '[gd_resource type="Shader" format=2]\n[resource]\ncode = ' + JSON.stringify(validSource))
+  const missingRoot = JSON.parse(await readTool.execute({ path: externalPath }, context))
+  assert.equal(missingRoot.error.code, "PROJECT_ROOT_NOT_FOUND")
+  for (const options of [{ project_root: "." }, { shader_path: "renamed.tres" }]) {
+    const externalRead = JSON.parse(await readTool.execute({ path: "external.material", ...options }, context))
+    assert.equal(externalRead.success, true)
+    assert.equal(externalRead.shader.source, "external")
+    assert.equal(externalRead.shader.code, validSource)
+    const externalValidation = JSON.parse(await validateTool.execute({ path: "external.material", ...options }, context))
+    assert.equal(externalValidation.valid, true)
+  }
+  const originalExternal = await readFile(externalPath)
+  const originalShader = await readFile(shaderPath)
+  const externalWrite = JSON.parse(await writeTool.execute({ path: externalPath, shader_code: replacement, shader_path: "renamed.tres" }, context))
+  assert.equal(externalWrite.success, true)
+  assert.equal(externalWrite.shared_shader, true)
+  assert.equal(externalWrite.written_path, shaderPath.split(path.sep).join("/"))
+  assert.deepEqual(await readFile(externalPath), originalExternal)
+  assert.notDeepEqual(await readFile(shaderPath), originalShader)
+  const afterExternal = JSON.parse(await readTool.execute({ path: externalPath, shader_path: shaderPath }, context))
+  assert.equal(afterExternal.shader.code, replacement)
+
 })

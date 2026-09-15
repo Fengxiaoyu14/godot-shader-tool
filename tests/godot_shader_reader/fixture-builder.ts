@@ -16,6 +16,7 @@ export function buildBinaryResource(
   resourceType: string,
   resources: readonly EncodedResource[],
   includeMagicHeader = true,
+  externalResources: readonly { type: string; path: string }[] = [],
 ): Uint8Array {
   const propertyNames = [...new Set(resources.flatMap((resource) => resource.properties.map((property) => property.name)))]
   const stringIndexes = new Map(propertyNames.map((name, index) => [name, index]))
@@ -43,7 +44,8 @@ export function buildBinaryResource(
     ...Array.from({ length: 14 }, () => u32(0)),
     u32(propertyNames.length),
     ...propertyNames.map(unicode),
-    u32(0),
+    u32(externalResources.length),
+    ...externalResources.flatMap((resource) => [unicode(resource.type), unicode(resource.path)]),
     u32(resources.length),
   )
 
@@ -140,4 +142,16 @@ function u64(value: number): Uint8Array {
 
 function concat(...parts: readonly Uint8Array[]): Uint8Array {
   return Buffer.concat(parts.map((part) => Buffer.from(part.buffer, part.byteOffset, part.byteLength)))
+}
+
+export function externalShaderMaterial(shaderPath = "res://shaders/shared.tres", options: {
+  inline?: boolean; includeMagicHeader?: boolean; type?: string; index?: number
+} = {}): Uint8Array {
+  const type = options.type ?? "Shader"
+  return buildBinaryResource("ShaderMaterial", [{
+    path: "res://materials/test.material", type: "ShaderMaterial",
+    properties: [{ name: "shader", value: options.inline
+      ? concat(u32(24), u32(1), unicode(type), unicode(shaderPath))
+      : concat(u32(24), u32(3), u32(options.index ?? 0)) }],
+  }], options.includeMagicHeader ?? true, options.inline ? [] : [{ type, path: shaderPath }])
 }

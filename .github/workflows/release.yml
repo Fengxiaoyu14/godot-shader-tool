@@ -1,0 +1,63 @@
+name: Test and publish release
+
+on:
+  push:
+    branches: [main]
+    paths: [scripts/release-version.txt]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-release
+  cancel-in-progress: false
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Run codec, writer, native validator and installed-package tests
+        shell: bash
+        run: node --test tests/godot_shader_reader/*.test.ts
+
+  publish:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Build and publish platform installation archives
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          version="$(cat scripts/release-version.txt)"
+          [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          test -f "docs/releases/$version.md"
+          if gh release view "$version" >/dev/null 2>&1; then
+            echo "Release $version already exists; refusing to replace it."
+            exit 1
+          fi
+          node scripts/release-package.mjs "$version"
+          (cd dist && sha256sum --check SHA256SUMS)
+          gh release create "$version" dist/*.zip dist/SHA256SUMS \
+            --target "$GITHUB_SHA" --latest \
+            --title "$version — External Shader read/write and Godot 3.5 compatibility" \
+            --notes-file "docs/releases/$version.md"

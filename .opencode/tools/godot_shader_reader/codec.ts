@@ -1,5 +1,5 @@
 import { GodotReaderError } from "./errors.ts"
-import { extractShaderCode, parseBinaryResource, type GodotResource } from "./resource.ts"
+import { extractShaderCode, getMaterialShaderReference, parseBinaryResource, type GodotResource } from "./resource.ts"
 import { serializeBinaryResource } from "./resource-writer.ts"
 import { openGodotContainer, type ContainerMetadata, type ZstdDecoder } from "./rscc.ts"
 import { encodeGodotContainer, type ZstdEncoder } from "./rscc-writer.ts"
@@ -45,6 +45,15 @@ export function setShaderCode(resource: GodotResource, code: string): void {
     throw new GodotReaderError("INVALID_SHADER_CODE", "shader_code must be losslessly encodable as UTF-8", { cause })
   }
 
+  if (resource.type === "ShaderMaterial") {
+    const { reference, property: shaderProperty } = getMaterialShaderReference(resource)
+    if (reference.kind === "external") {
+      throw new GodotReaderError("EXTERNAL_SHADER_WRITE_UNSUPPORTED", "Writing a shared external Shader through a material is not supported", {
+        offset: shaderProperty.offset,
+        details: { dependency_path: reference.path },
+      })
+    }
+  }
   const extracted = extractShaderCode(resource)
   const property = extracted.shaderResource.properties.find((candidate) => candidate.name === "code")
   if (property?.value.type !== "string" || property.value.type_id !== 5) {

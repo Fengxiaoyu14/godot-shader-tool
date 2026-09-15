@@ -8,14 +8,17 @@ import { resolveInputPath } from "./godot_shader_reader/input-path.ts"
 
 export default tool({
   description:
-    "Replace the complete Shader.code stored in an existing Godot 3.6 binary ShaderMaterial (.material/.res). " +
-    "This is a write operation: it requires official Godot 3.6 GLES3 validation before serialization and again " +
-    "after exact temp-file read-back, verifies that only Shader.code changed, and only then safely replaces the original.",
+    "Replace complete Godot 3.5/3.6 Shader code in embedded materials or standalone Shader files. " +
+    "For external references, writes the actual shared Shader file and leaves the material unchanged; " +
+    "all materials sharing that Shader see the change. Returns written_path. Requires official Godot 3.6 GLES3 " +
+    "pre/post validation, exact read-back, non-code preservation and safe replacement.",
   args: {
     path: tool.schema
       .string()
-      .describe("Absolute path or current-worktree-relative path to an existing Godot 3.6 .material or .res file"),
+      .describe("Absolute path or current-worktree-relative path to an Godot 3.5/3.6 material or standalone Shader file"),
     shader_code: tool.schema.string().describe("Complete replacement Shader.code; preserved exactly without formatting"),
+    project_root: tool.schema.string().optional().describe("Godot project root for res:// Shader references"),
+    shader_path: tool.schema.string().optional().describe("Explicit external Shader file override; this file will be modified"),
   },
   async execute(args, context) {
     try {
@@ -32,7 +35,10 @@ export default tool({
         return failure("FILE_NOT_FOUND", `Not a regular file: ${args.path}`)
       }
 
-      const result = await writeGodotShaderFile(resolved, args.shader_code)
+      const result = await writeGodotShaderFile(resolved, args.shader_code, {
+        ...(args.project_root === undefined ? {} : { projectRoot: resolveInputPath(args.project_root, context.worktree) }),
+        ...(args.shader_path === undefined ? {} : { shaderPath: resolveInputPath(args.shader_path, context.worktree) }),
+      })
       return JSON.stringify({ success: true, path: resolved.split(path.sep).join("/"), ...result }, null, 2)
     } catch (error) {
       return JSON.stringify({

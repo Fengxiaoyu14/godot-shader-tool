@@ -145,3 +145,44 @@ Compressed bytes do not need to match Godot's bytes. Compatibility is establishe
 ## Shader-only validation
 
 After serialization, the Writer parses the output again with the shared Reader. Validation requires exact equality for every modeled header field, external resource, internal resource, property name/order, reference, and Variant value except the one located `Shader.code` String. That one value must be exactly equal to the requested JavaScript string, including UTF-8 text, LF/CRLF, and final-newline presence.
+
+
+## External Shader files and text resources
+
+The file-aware reader now distinguishes internal Shader references from indexed
+external (`OBJECT_EXTERNAL_RESOURCE_INDEX = 3`) and legacy inline external
+(`OBJECT_EXTERNAL_RESOURCE = 1`) references. The binary codec remains IO-free;
+only the file reader resolves external paths.
+
+Text Shader `.tres` files use `[gd_resource type="Shader" format=2]` and a String
+`code` in the main `[resource]` section. The structural tokenizer follows Godot
+3.6 `VariantParser::get_token` for quoted strings: literal newlines, `\b`, `\t`,
+`\n`, `\f`, `\r`, four-hex-digit `\u`, and pass-through unknown escapes.
+Resource comments use `;`. Nested values and subresource code are consumed
+structurally, not searched with a `code =` regular expression. This is a focused
+Shader resource reader, not a replacement for Godot's full Variant loader.
+
+Official reference:
+[`core/variant_parser.cpp`](https://github.com/godotengine/godot/blob/de2f0f147c5b7eff2d0f6dbc35042a4173fd59be/core/variant_parser.cpp).
+
+UTF-8 decode errors, malformed resource structure, unsupported text versions,
+wrong root types, and missing/non-String/empty code are explicit failures.
+The native validator still owns all shader-language syntax and semantic checks.
+
+
+## Godot 3.5 compatibility (v1.2.0)
+
+The loader and serializer accept minor versions 5 and 6 with major 3 and binary
+format 3. Header fields, Variant IDs, object reference kinds and NodePath
+encoding match in the official
+[3.5 loader/saver](https://github.com/godotengine/godot/blob/3.5-stable/core/io/resource_format_binary.cpp)
+and
+[3.6 loader/saver](https://github.com/godotengine/godot/blob/3.6-stable/core/io/resource_format_binary.cpp).
+The engine's loader itself checks the binary format and major version, not an
+exact minor-version match. This tool retains an explicit 3.5/3.6 allowlist;
+it does not blindly accept unknown engine or format versions.
+
+Serialization writes the parsed engine major/minor and format values, so editing
+a 3.5 resource does not relabel it as 3.6. Tests cover both versions in RSRC and
+RSCC, embedded Shaders and standalone binary Shader dependencies. The bundled
+shader compiler remains Godot 3.6 GLES3.
