@@ -431,8 +431,9 @@ errors preserve the original bytes. Private material content is never committed.
   3.5 file headers does not claim full Godot 3.5 shader-language validation.
 - Little-endian resources only.
 - RSCC compression mode `2` (ZSTD) and uncompressed RSRC only.
-- Writer requires `import_metadata_offset == 0`; import metadata payloads are not
-  modeled.
+- The unused legacy `import_metadata_offset` header field is preserved exactly,
+  including uint64 values above JavaScript's safe integer range. Actual internal
+  resource offsets and resource body boundaries remain strictly validated.
 - Material root must already be `ShaderMaterial`; `shader` must reference an
   internal or external `Shader`. Standalone roots must be `Shader`; existing
   `code` must be a non-empty String. No resource creation is supported.

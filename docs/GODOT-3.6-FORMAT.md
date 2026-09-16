@@ -112,7 +112,9 @@ The shared IR preserves:
 - property order/name;
 - each Variant's binary `type_id` and typed value.
 
-Import metadata is the one header feature not modeled. The Reader reports its offset, but the Writer refuses non-zero `import_metadata_offset` instead of copying a stale physical offset after reserialization.
+The legacy `import_metadata_offset` is an opaque uint64: the Godot 3.5/3.6 loader reads it but does not dereference it. The saver initializes it to zero, while `rename_dependencies` unconditionally adds the signed file-size delta and writes it back as uint64. A negative delta can therefore wrap zero to a very large unsigned value. See the official [3.5 implementation](https://github.com/godotengine/godot/blob/3.5-stable/core/io/resource_format_binary.cpp) and [3.6 implementation](https://github.com/godotengine/godot/blob/3.6-stable/core/io/resource_format_binary.cpp).
+
+The Reader keeps safe values as numbers and larger values as unsigned decimal strings so the IR remains JSON serializable without precision loss. The Writer preserves all eight bytes unchanged, even when Shader length changes. This is separate from actual internal-resource offsets, which are recalculated and must remain safe, in bounds, and strictly increasing. All resource bodies must still be completely consumed; unknown trailing payloads are not silently discarded.
 
 ## Variant serialization
 

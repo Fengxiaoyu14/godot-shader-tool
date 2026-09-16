@@ -40,7 +40,9 @@ export interface BinaryResourceModel {
   versionMinor: number
   formatVersion: number
   type: string
-  importMetadataOffset: number
+  // Opaque legacy uint64, unused by the Godot 3.5/3.6 loader. Large values
+  // use decimal strings so the model stays exact and JSON serializable.
+  importMetadataOffset: number | string
   reservedFields: number[]
   stringTable: string[]
   externalResources: ExternalResource[]
@@ -102,7 +104,10 @@ export function parseBinaryResource(bytes: Uint8Array, resourceHeaderOffset: num
   }
 
   const type = readUnicodeString(reader)
-  const importMetadataOffset = reader.readU64Number("import metadata offset")
+  const rawImportMetadataOffset = reader.readU64()
+  const importMetadataOffset = rawImportMetadataOffset <= BigInt(Number.MAX_SAFE_INTEGER)
+    ? Number(rawImportMetadataOffset)
+    : rawImportMetadataOffset.toString()
   const reservedFields: number[] = []
   for (let index = 0; index < RESERVED_FIELD_COUNT; index++) {
     reservedFields.push(reader.readU32())

@@ -27,7 +27,11 @@ export function serializeBinaryResource(
   writer.writeU32(resource.versionMinor)
   writer.writeU32(resource.formatVersion)
   writeUnicodeString(writer, resource.type)
-  writer.writeU64(resource.importMetadataOffset)
+  // Preserve this unused legacy header field, including uint64 wraparound
+  // values produced by Godot's dependency renamer. It is not a live offset.
+  writer.writeU64(typeof resource.importMetadataOffset === "string"
+    ? BigInt(resource.importMetadataOffset)
+    : resource.importMetadataOffset)
   for (const reserved of resource.reservedFields) {
     writer.writeU32(reserved)
   }
@@ -92,10 +96,10 @@ function validateWritableResource(resource: GodotResource): void {
   if (resource.versionMajor !== 3 || ![5, 6].includes(resource.versionMinor) || resource.formatVersion !== 3) {
     throw new GodotReaderError("UNSUPPORTED_RESOURCE_FOR_WRITE", "Only Godot 3.5/3.6 binary format version 3 can be written")
   }
-  if (resource.importMetadataOffset !== 0) {
+  if (typeof resource.importMetadataOffset === "string" && !/^(0|[1-9][0-9]{0,19})$/.test(resource.importMetadataOffset)) {
     throw new GodotReaderError(
-      "UNSUPPORTED_RESOURCE_FOR_WRITE",
-      "Resources with import metadata cannot be written because the metadata payload is not modeled",
+      "SERIALIZATION_FAILED",
+      "Legacy import metadata field must be an unsigned decimal uint64",
       { details: { import_metadata_offset: resource.importMetadataOffset } },
     )
   }
