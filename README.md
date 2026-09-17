@@ -1,5 +1,7 @@
 # Godot 3.5/3.6 Shader Validate/Read/Write Tools for OpenCode
 
+Current release: **v1.3.0** — guarded patches, batch plans and source inspection.
+
 This repository provides OpenCode custom tools for Godot **3.5/3.6** binary
 `ShaderMaterial` resources and standalone Shader reads:
 
@@ -505,7 +507,7 @@ From a complete source checkout, build the Linux x64 and Windows x64
 installation archives with:
 
 ```bash
-node scripts/release-package.mjs v1.2.0
+node scripts/release-package.mjs v1.3.0
 ```
 
 The archives and their `SHA256SUMS` file are written to `dist/`. Each archive

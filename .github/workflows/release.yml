@@ -59,5 +59,5 @@ jobs:
           (cd dist && sha256sum --check SHA256SUMS)
           gh release create "$version" dist/*.zip dist/SHA256SUMS \
             --target "$GITHUB_SHA" --latest \
-            --title "$version — External Shader read/write and Godot 3.5 compatibility" \
+            --title "$version" \
             --notes-file "docs/releases/$version.md"
