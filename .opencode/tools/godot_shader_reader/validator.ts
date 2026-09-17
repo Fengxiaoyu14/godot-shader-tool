@@ -31,6 +31,16 @@ export type ShaderValidator = (shaderCode: string) => Promise<ShaderValidationRe
 export interface ShaderValidatorOptions {
   executablePath?: string
   timeoutMs?: number
+  godotVersion?: string
+  renderer?: string
+}
+
+export function requireValidatorProfile(options: { godotVersion?: string; renderer?: string }): void {
+  if ((options.godotVersion ?? "3.6") !== "3.6" || (options.renderer ?? "gles3") !== "gles3") {
+    throw new GodotReaderError("UNSUPPORTED_VALIDATOR_PROFILE", "Only the official Godot 3.6 GLES3 validator is bundled", {
+      details: { requested: { godot_version: options.godotVersion ?? "3.6", renderer: options.renderer ?? "gles3" }, supported: [{ godot_version: "3.6", renderer: "gles3" }] },
+    })
+  }
 }
 
 export function bundledValidatorPath(
@@ -59,6 +69,7 @@ export async function validateGodot36Shader(
   shaderCode: string,
   options: ShaderValidatorOptions = {},
 ): Promise<ShaderValidationResult> {
+  requireValidatorProfile(options)
   const executablePath = options.executablePath ?? bundledValidatorPath()
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) {

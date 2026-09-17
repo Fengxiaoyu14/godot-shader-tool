@@ -1,6 +1,7 @@
 import { parseResource, type ParsedResource } from "./codec.ts"
 import { extractShaderCode } from "./resource.ts"
 import type { ContainerMetadata, ZstdDecoder } from "./rscc.ts"
+import { shaderHash } from "./source-info.ts"
 
 export interface ShaderReadResult {
   container: ContainerMetadata
@@ -19,6 +20,7 @@ export interface ShaderReadResult {
     internal_resource_index: number
     code: string
     length: number
+    hash: string
   }
 }
 
@@ -47,6 +49,7 @@ export function readEmbeddedShader(parsed: ParsedResource): ShaderReadResult {
       internal_resource_index: extracted.shaderResource.index,
       code: extracted.code,
       length: extracted.code.length,
+      hash: shaderHash(extracted.code),
     },
   }
 }

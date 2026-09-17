@@ -1,6 +1,6 @@
 # Godot 3.5/3.6 Shader Validate/Read/Write Tools for OpenCode
 
-This repository provides three OpenCode custom tools for Godot **3.5/3.6** binary
+This repository provides OpenCode custom tools for Godot **3.5/3.6** binary
 `ShaderMaterial` resources and standalone Shader reads:
 
 - `godot-shader-validate` validates source directly or extracts it from a
@@ -9,6 +9,9 @@ This repository provides three OpenCode custom tools for Godot **3.5/3.6** binar
   It also accepts standalone binary/text Shader resources and `.shader`/`.gdshader` source.
 - `godot-shader-write` replaces embedded or external `Shader.code` only after mandatory
   validation before serialization and again from the actual temp-file read-back.
+- `godot-shader-write-patch` applies count-asserted literal edits internally and returns a diff.
+- `godot-shader-write-plan` executes a JSON plan with independent per-file transactions.
+- `godot-shader-search` searches decoded source recursively and returns lines and SHA-256 hashes.
 
 Validation uses the official Godot `ShaderLanguage` and `ShaderTypes` sources at
 `3.6-stable` commit
@@ -74,7 +77,10 @@ confirmation prompt:
   "permission": {
     "godot-shader-read": "allow",
     "godot-shader-validate": "allow",
-    "godot-shader-write": "ask"
+    "godot-shader-write": "ask",
+    "godot-shader-write-patch": "ask",
+    "godot-shader-write-plan": "ask",
+    "godot-shader-search": "allow"
   }
 }
 ```
@@ -256,6 +262,159 @@ A successful write returns compact metadata:
   "after": { "shader_length": 1732 }
 }
 ```
+
+## Patches and batch plans
+
+Patch existing decoded source without routing the full Shader through an LLM:
+
+```text
+godot-shader-write-patch({
+  path: "materials/car.material",
+  ops: [
+    {find: "vec4 light;", replace: "vec4 light = vec4(0.);", expect: 1}
+  ]
+})
+```
+
+`find` and `replace` are literal strings, including `$&`, backslashes and line
+endings. `expect` is a required positive integer counting non-overlapping
+matches. Operations run in order on the result of the previous operation, in
+memory. A missing/excess match or malformed operation rejects the entire file;
+none of its edits reach disk. Empty finds and unknown fields are rejected.
+Use `replace: ""` for guarded text deletion.
+
+Line deletion is also available, with an exact-content guard:
+
+```json
+{"delete_lines": [282, 283], "expected_text": "// first line\n// second line\n", "expect": 1}
+```
+
+The range is 1-based and inclusive in the **current intermediate source**.
+`expected_text` must equal those complete lines, including their LF/CRLF endings;
+`expect` must be 1. Bare line-number deletion is rejected to prevent shifted
+line numbers from silently deleting the wrong code.
+
+Both full writes and patches accept `expected_hash` (full decoded-source SHA-256)
+and `dry_run: true`. Dry runs still serialize a sibling temporary file, verify
+its actual read-back, and run official pre/post validation, but never replace
+the original. Results include `before.shader_hash`, `after.shader_hash`,
+`expected_diff` (unified diff with three context lines), and `dry_run`.
+An unchanged source returns an empty diff. Diffs describe source, not binary
+container bytes; they are also returned by full-source writes.
+
+For a batch, save a JSON array such as `plans/fresnel.json`:
+
+```json
+[
+  {
+    "path": "../materials/car-a.material",
+    "ops": [{"find": "vec4 light;", "replace": "vec4 light = vec4(0.);", "expect": 1}]
+  },
+  {
+    "path": "../materials/car-b.material",
+    "ops": [{"find": "vec4 light;", "replace": "vec4 light = vec4(0.);", "expect": 1}]
+  }
+]
+```
+
+```text
+godot-shader-write-plan({plan_path: "plans/fresnel.json", dry_run: true})
+godot-shader-write-plan({plan_path: "plans/fresnel.json"})
+```
+
+Only `plan_path` is resolved from the OpenCode worktree. Paths **inside** the
+plan (`path`, optional `project_root` and `shader_path`) resolve from the plan's
+directory. An entry may also supply `expected_hash`; use hashes recorded during
+review to detect changes between review and execution. Without it, the batch
+freezes each source hash during preflight, protecting the execution itself.
+Dry run and apply are separate calls; dry run does not silently modify the plan
+or bind a later approval to its contents.
+
+The plan is read once. All actual Shader targets are resolved before writes.
+If multiple entries resolve to the same target (including a shared external
+Shader), **all colliding entries are rejected** with `DUPLICATE_WRITE_TARGET`.
+Keep one entry for that shared target. Distinct files containing identical
+embedded source are processed independently. The writer rechecks the target,
+source and referring material against concurrent edits before replacement.
+
+One `godot-shader-write-plan` invocation uses one OpenCode tool permission;
+it does not invoke a separate ask-gated tool for every entry. Approving the plan
+includes the actual external Shader files it resolves to. Configure this tool
+as `ask` and review its targets/dry-run output. Ordinary single-file write and
+patch calls keep their own permissions.
+
+The response contains `summary` and a `results` entry for every input, including
+hashes/diffs for successful writes and diagnostic errors for failures:
+
+| Status | Meaning |
+|---|---|
+| `success` | This file was replaced after mandatory validation. |
+| `dry_run` | Validation succeeded; original was not replaced. |
+| `rejected` | Preflight rejected the entry; no write attempted. |
+| `failed_original_preserved` | Failed before replacement; this operation preserved the original. |
+| `failed_check_required` | Concurrent edit, uncertain OS replacement failure, or unexpected internal error; inspect diagnostics. |
+
+Failures do not stop later entries, and earlier successes are not rolled back.
+This is a per-file transaction, not an all-plan transaction. Validation failure
+normally discards a temp file before replacement, so reporting it as a completed
+write followed by a rollback would be inaccurate. A Windows restore failure
+still exposes the existing `recoverable_backup_path` diagnostic.
+
+## Hashes, selective reads and search
+
+Every file read and byte-only `readGodot36Shader` result includes `shader.hash`:
+lowercase SHA-256 of decoded source encoded as UTF-8. It excludes resource
+serialization, the resource String terminator and a source-file BOM. It
+**includes** comments, whitespace and exact LF/CRLF. Same hashes group exact
+code copies; they do not prove equal material uniforms or rendering behavior.
+
+```text
+godot-shader-read({path: "car.material", metadata_only: true})
+godot-shader-read({path: "car.material", start_line: 280, end_line: 320})
+godot-shader-search({pattern: "fresnel", project_root: "."})
+godot-shader-search({pattern: "pow\\s*\\(", project_root: ".", regex: true, max_matches: 100, offset: 0})
+```
+
+`metadata_only` omits source and resource dependency tables and returns lengths,
+UTF-8 byte count, line count, uniforms and function signatures with line numbers.
+Uniform/function extraction is a **lexical navigation index**, with comments
+masked; it is not an AST, type checker or authoritative validation result.
+Ranges are 1-based/inclusive and retain exact line endings. `shader.length` and
+hash still describe the complete source, with `partial: true` and range bounds
+marking returned code. `length` uses JavaScript UTF-16 code units; `utf8_bytes`
+counts encoded bytes. A final LF does not create an extra empty physical line.
+Ranges cannot be combined with `metadata_only`.
+
+Search uses the existing reader, including RSCC decoding and external Shader
+resolution; no Python parser or additional compression dependency is required.
+It visits `.material`, `.res`, `.tres`, `.shader` and `.gdshader` recursively,
+skipping symlinks and `.git`, `.godot`, `.import`, `node_modules` directories.
+Literal search is case-sensitive. Regex uses JavaScript syntax against each
+individual line; results contain one record per matching line, not occurrence.
+Paths, `shader_path`, `shader_hash`, line number and line text are returned.
+`max_matches` defaults to 200 (maximum 10000); `offset`/`next_offset` paginate
+matching lines in stable path order. `total_matches` still covers the scan.
+Unreadable, corrupt or unsupported resources are reported in `errors` while
+other files continue; `success: false` indicates an incomplete scan. Files such
+as non-Shader `.tres` resources may therefore appear as explicit errors.
+
+### NUL and validator profiles
+
+Godot binary resource strings store a trailing NUL byte. The existing codec
+consumes that terminator on read and emits it on serialization; it is not part
+of `shader.code`, its hash, line numbering or diff. Do not strip arbitrary
+characters in calling code. Embedded NUL in resource payloads is rejected, and
+NUL supplied as source is rejected by the validated writer. No whitespace or
+line-ending normalization is introduced.
+
+`validate`, `write`, `write-patch` and `write-plan` accept `godot_version` and
+`renderer`, defaulting to `"3.6"` and `"gles3"`. The only bundled profile remains
+**Godot 3.6 GLES3**. Other combinations fail closed with
+`UNSUPPORTED_VALIDATOR_PROFILE`, listing supported profiles. These arguments
+reserve a selection boundary; they do not add Godot 3.5/4.x compilers, GLES2 or
+Godot 4 resource-format support. The native CLI remains fixed to its compiled
+profile. Shader validation still does not establish visual equivalence or a
+GPU performance improvement.
 
 ## Write safety
 
@@ -439,7 +598,7 @@ errors preserve the original bytes. Private material content is never committed.
   `code` must be a non-empty String. No resource creation is supported.
 - Deprecated embedded Image and InputEvent Variants are unsupported.
 - Text ShaderMaterial loading and recursive material references are not supported.
-- No Godot 4.x resource format, scene recursion, texture decoding, partial text patches, new
+- No Godot 4.x resource format, scene recursion, texture decoding, new
   resources, or resource/property insertion/deletion.
 - Bundled validator executables currently cover x64 Linux and x64 Windows.
 

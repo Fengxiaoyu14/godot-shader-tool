@@ -19,6 +19,10 @@ export default tool({
     shader_code: tool.schema.string().describe("Complete replacement Shader.code; preserved exactly without formatting"),
     project_root: tool.schema.string().optional().describe("Godot project root for res:// Shader references"),
     shader_path: tool.schema.string().optional().describe("Explicit external Shader file override; this file will be modified"),
+    expected_hash: tool.schema.string().optional().describe("Require this SHA-256 source hash before writing"),
+    dry_run: tool.schema.boolean().optional().describe("Validate and return diff without replacing the original"),
+    godot_version: tool.schema.string().optional().describe("Validator profile, default 3.6; other versions currently rejected"),
+    renderer: tool.schema.string().optional().describe("Validator renderer, default gles3; other renderers currently rejected"),
   },
   async execute(args, context) {
     try {
@@ -36,6 +40,9 @@ export default tool({
       }
 
       const result = await writeGodotShaderFile(resolved, args.shader_code, {
+        expectedHash: args.expected_hash,
+        dryRun: args.dry_run,
+        godotVersion: args.godot_version, renderer: args.renderer,
         ...(args.project_root === undefined ? {} : { projectRoot: resolveInputPath(args.project_root, context.worktree) }),
         ...(args.shader_path === undefined ? {} : { shaderPath: resolveInputPath(args.shader_path, context.worktree) }),
       })

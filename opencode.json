@@ -3,6 +3,9 @@
   "permission": {
     "godot-shader-read": "allow",
     "godot-shader-validate": "allow",
-    "godot-shader-write": "ask"
+    "godot-shader-write": "ask",
+    "godot-shader-write-patch": "ask",
+    "godot-shader-write-plan": "ask",
+    "godot-shader-search": "allow"
   }
 }

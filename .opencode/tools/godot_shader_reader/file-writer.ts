@@ -7,8 +7,11 @@ import type { ZstdEncoder } from "./rscc-writer.ts"
 import { readGodotShaderFile } from "./file-reader.ts"
 import { prepareShaderWrite } from "./shader-rewrite.ts"
 import { GodotReaderError } from "./errors.ts"
+import { shaderHash, unifiedDiff } from "./source-info.ts"
+import { applyShaderPatch, type ShaderPatchOp } from "./patch.ts"
 import {
   validateGodot36Shader,
+  requireValidatorProfile,
   type ShaderValidationResult,
   type ShaderValidator,
 } from "./validator.ts"
@@ -28,8 +31,10 @@ export interface ShaderFileWriteResult {
   shared_shader?: true
   resource_path?: string
   validation: ShaderWriteValidation
-  before: { shader_length: number }
-  after: { shader_length: number }
+  before: { shader_length: number; shader_hash: string }
+  after: { shader_length: number; shader_hash: string }
+  expected_diff: string
+  dry_run: boolean
 }
 
 export interface ShaderFileWriteOptions {
@@ -38,6 +43,11 @@ export interface ShaderFileWriteOptions {
   shaderValidator?: ShaderValidator
   projectRoot?: string
   shaderPath?: string
+  expectedHash?: string
+  expectedTarget?: string
+  dryRun?: boolean
+  godotVersion?: string
+  renderer?: string
 }
 
 export interface SafeReplaceOptions {
@@ -52,19 +62,50 @@ export async function writeGodotShaderFile(
   shaderCode: string,
   options: ShaderFileWriteOptions = {},
 ): Promise<ShaderFileWriteResult> {
+  return writeShaderFile(targetPath, shaderCode, options)
+}
+
+export async function patchGodotShaderFile(
+  targetPath: string,
+  ops: ShaderPatchOp[],
+  options: ShaderFileWriteOptions = {},
+): Promise<ShaderFileWriteResult> {
+  return writeShaderFile(targetPath, (original) => applyShaderPatch(original, ops), options)
+}
+
+async function writeShaderFile(
+  targetPath: string,
+  replacement: string | ((original: string) => string),
+  options: ShaderFileWriteOptions,
+): Promise<ShaderFileWriteResult> {
+  requireValidatorProfile(options)
   const shaderValidator = options.shaderValidator ?? validateGodot36Shader
-  await requireValidShader(shaderCode, shaderValidator, "pre_write")
+  if (typeof replacement === "string") await requireValidShader(replacement, shaderValidator, "pre_write")
 
   const inputPath = await realpath(targetPath)
   const inputBytes = await readFile(inputPath)
   const located = await readGodotShaderFile(inputPath, options)
   targetPath = located.shader.path
+  if (options.expectedTarget !== undefined && targetPath !== options.expectedTarget) {
+    throw new GodotReaderError("UNEXPECTED_RESOURCE_CHANGE", "Shader target changed after plan resolution")
+  }
+  if (options.expectedHash !== undefined && options.expectedHash !== located.shader.hash) {
+    throw new GodotReaderError("SHADER_HASH_MISMATCH", "Shader differs from the expected source hash", {
+      details: { expected: options.expectedHash, actual: located.shader.hash },
+    })
+  }
+  const shaderCode = typeof replacement === "string" ? replacement : replacement(located.shader.code)
   const originalBytes = await readFile(targetPath)
   // Refuse to proceed if either input changed during resolution.
   if (!bytesEqual(inputBytes, await readFile(inputPath))) {
     throw new GodotReaderError("UNEXPECTED_RESOURCE_CHANGE", "Input changed during Shader resolution")
   }
+  if (typeof replacement !== "string") await requireValidShader(shaderCode, shaderValidator, "pre_write")
   const rewritten = prepareShaderWrite(originalBytes, targetPath, shaderCode, options)
+  if (rewritten.beforeCode !== located.shader.code) {
+    throw new GodotReaderError("UNEXPECTED_RESOURCE_CHANGE", "Shader source changed during resolution")
+  }
+  const expectedDiff = unifiedDiff(rewritten.beforeCode, shaderCode, targetPath)
 
   const tempPath = siblingPath(targetPath, "opencode-tmp")
   let tempExists = false
@@ -106,8 +147,10 @@ export async function writeGodotShaderFile(
       )
     }
 
-    await replaceFileSafely(tempPath, targetPath)
-    tempExists = false
+    if (!options.dryRun) {
+      await replaceFileSafely(tempPath, targetPath)
+      tempExists = false
+    }
     return {
       resource_type: rewritten.resourceType,
       written_path: targetPath,
@@ -120,8 +163,10 @@ export async function writeGodotShaderFile(
         semantic_diff: true,
         post_write_shader: true,
       },
-      before: { shader_length: rewritten.beforeCode.length },
-      after: { shader_length: verifiedCode.length },
+      before: { shader_length: rewritten.beforeCode.length, shader_hash: shaderHash(rewritten.beforeCode) },
+      after: { shader_length: verifiedCode.length, shader_hash: shaderHash(verifiedCode) },
+      expected_diff: expectedDiff,
+      dry_run: options.dryRun ?? false,
     }
   } finally {
     if (tempExists) {

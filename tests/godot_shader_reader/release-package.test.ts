@@ -54,9 +54,9 @@ test("host release package passes validate/write/read smoke", {
   }))
   await writeFile(
     path.join(pluginDirectory, "index.js"),
-    "const stringSchema = () => ({ optional() { return this }, describe() { return this } })\n" +
+    "const stringSchema = () => ({ optional() { return this }, describe() { return this }, int() { return this }, positive() { return this }, strict() { return this } })\n" +
       "export const tool = (definition) => definition\n" +
-      "tool.schema = { string: stringSchema }\n",
+      "tool.schema = Object.fromEntries(['string', 'number', 'boolean', 'array', 'union', 'object', 'tuple', 'literal'].map(k => [k, stringSchema]))\n",
   )
 
   const validateTool = (await import(pathToFileURL(
@@ -131,5 +131,37 @@ test("host release package passes validate/write/read smoke", {
   assert.notDeepEqual(await readFile(shaderPath), originalShader)
   const afterExternal = JSON.parse(await readTool.execute({ path: externalPath, shader_path: shaderPath }, context))
   assert.equal(afterExternal.shader.code, replacement)
+
+  const patchTool = (await import(pathToFileURL(path.join(staged.tools, "godot-shader-write-patch.ts")).href)).default
+  const planTool = (await import(pathToFileURL(path.join(staged.tools, "godot-shader-write-plan.ts")).href)).default
+  const searchTool = (await import(pathToFileURL(path.join(staged.tools, "godot-shader-search.ts")).href)).default
+  const metadata = JSON.parse(await readTool.execute({ path: "test.material", metadata_only: true }, context))
+  assert.equal(metadata.success, true)
+  assert.equal("code" in metadata.shader, false)
+  assert.match(metadata.shader.hash, /^[a-f0-9]{64}$/)
+  const partial = JSON.parse(await readTool.execute({ path: "test.material", start_line: 1, end_line: 1 }, context))
+  assert.equal(partial.shader.code, "shader_type spatial;\r\n")
+  assert.equal(partial.shader.hash, metadata.shader.hash)
+  const patchResult = JSON.parse(await patchTool.execute({
+    path: "test.material", expected_hash: metadata.shader.hash,
+    ops: [{ find: "vec3(0.8)", replace: "vec3(0.9)", expect: 1 }],
+  }, context))
+  assert.equal(patchResult.success, true)
+  assert.match(patchResult.expected_diff, /vec3\(0\.9\)/)
+  await writeFile(path.join(directory, "plan.json"), JSON.stringify([
+    { path: "test.material", expected_hash: patchResult.after.shader_hash, ops: [{ find: "vec3(0.9)", replace: "vec3(0.7)", expect: 1 }] },
+  ]))
+  const beforeDryRun = await readFile(materialPath)
+  const dry = JSON.parse(await planTool.execute({ plan_path: "plan.json", dry_run: true }, context))
+  assert.equal(dry.summary.succeeded, 1)
+  assert.equal(dry.results[0].status, "dry_run")
+  assert.deepEqual(await readFile(materialPath), beforeDryRun)
+  const applied = JSON.parse(await planTool.execute({ plan_path: "plan.json" }, context))
+  assert.equal(applied.summary.succeeded, 1)
+  const searched = JSON.parse(await searchTool.execute({ pattern: "vec3(0.7)", project_root: directory }, context))
+  assert.equal(searched.matches.length, 1)
+  assert.equal(searched.matches[0].shader_hash, applied.results[0].after.shader_hash)
+  const unsupported = JSON.parse(await planTool.execute({ plan_path: "plan.json", godot_version: "4.3" }, context))
+  assert.equal(unsupported.results[0].error.code, "UNSUPPORTED_VALIDATOR_PROFILE")
 
 })

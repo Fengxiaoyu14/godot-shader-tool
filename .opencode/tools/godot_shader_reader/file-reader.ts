@@ -7,6 +7,7 @@ import { getMaterialShaderReference, type BinaryResourceModel } from "./resource
 import { readEmbeddedShader, type ShaderReadResult } from "./shader-reader.ts"
 import type { ZstdDecoder } from "./rscc.ts"
 import { decodeShaderUtf8, readTextShader } from "./text-shader.ts"
+import { shaderHash } from "./source-info.ts"
 
 export interface ShaderFileReadOptions {
   projectRoot?: string
@@ -23,6 +24,7 @@ export interface ShaderFileReadResult {
     path: string
     code: string
     length: number
+    hash: string
     subindex?: number
     internal_resource_index?: number
     resource_path?: string
@@ -63,7 +65,7 @@ export async function readGodotShaderFile(
           ...(reference.index === undefined ? {} : { external_resource_index: reference.index }),
           ...(resolved.projectRoot ? { project_root: normalized(resolved.projectRoot) } : {}),
           overridden: options.shaderPath !== undefined,
-          code: shader.code, length: shader.code.length,
+          code: shader.code, length: shader.code.length, hash: shaderHash(shader.code),
         },
       }
     } catch (error) {
@@ -82,7 +84,7 @@ export async function readGodotShaderFile(
     resource: parsed ? describeBinaryResource(parsed.resource) : {
       type: "Shader", ...(shader.format === "text" ? { format_version: 2 } : {}),
     },
-    shader: { source: "standalone", path: input.path, code: shader.code, length: shader.code.length },
+    shader: { source: "standalone", path: input.path, code: shader.code, length: shader.code.length, hash: shaderHash(shader.code) },
   }
 }
 

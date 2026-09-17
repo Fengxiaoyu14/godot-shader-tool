@@ -2,13 +2,15 @@ import { readGodotShaderFile } from "./file-reader.ts"
 import { GodotReaderError } from "./errors.ts"
 import { resolveInputPath } from "./input-path.ts"
 import type { ZstdDecoder } from "./rscc.ts"
-import { validateGodot36Shader, type ShaderValidationResult, type ShaderValidator } from "./validator.ts"
+import { validateGodot36Shader, requireValidatorProfile, type ShaderValidationResult, type ShaderValidator } from "./validator.ts"
 
 export interface ShaderValidationRequest {
   shader_code?: string
   path?: string
   project_root?: string
   shader_path?: string
+  godot_version?: string
+  renderer?: string
 }
 
 export interface ShaderValidationRequestOptions {
@@ -21,6 +23,7 @@ export async function validateShaderRequest(
   worktree: string,
   options: ShaderValidationRequestOptions = {},
 ): Promise<ShaderValidationResult> {
+  requireValidatorProfile({ godotVersion: request.godot_version, renderer: request.renderer })
   const hasShaderCode = request.shader_code !== undefined
   const hasPath = request.path !== undefined
   if (hasShaderCode === hasPath) {

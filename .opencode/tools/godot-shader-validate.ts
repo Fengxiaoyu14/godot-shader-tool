@@ -16,6 +16,8 @@ export default tool({
       .describe("Absolute or current-worktree-relative path to a Godot 3.5/3.6 material or Shader file"),
     project_root: tool.schema.string().optional().describe("Godot project root for res:// paths; auto-detected if omitted"),
     shader_path: tool.schema.string().optional().describe("Explicit external Shader file override for path input"),
+    godot_version: tool.schema.string().optional().describe("Validator profile, default 3.6; unsupported versions fail closed"),
+    renderer: tool.schema.string().optional().describe("Validator renderer, default gles3"),
   },
   async execute(args, context) {
     try {
