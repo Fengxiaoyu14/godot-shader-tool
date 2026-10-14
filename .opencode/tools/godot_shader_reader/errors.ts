@@ -1,5 +1,6 @@
 export type GodotReaderErrorCode =
   | "INVALID_PATCH"
+  | "RESOURCE_HASH_MISMATCH"
   | "PATCH_EXPECT_MISMATCH"
   | "SHADER_HASH_MISMATCH"
   | "INVALID_PLAN"

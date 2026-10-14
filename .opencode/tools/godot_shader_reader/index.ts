@@ -30,3 +30,5 @@ export type {
   ShaderValidationSuccess,
   ShaderValidator,
 } from "./validator.ts"
+export { materialParams, uniformIndex, resourceHash } from "./material-params.ts"
+export { diffGodotMaterials } from "./material-diff.ts"

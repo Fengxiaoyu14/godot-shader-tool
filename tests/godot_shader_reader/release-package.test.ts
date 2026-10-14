@@ -54,9 +54,9 @@ test("host release package passes validate/write/read smoke", {
   }))
   await writeFile(
     path.join(pluginDirectory, "index.js"),
-    "const stringSchema = () => ({ optional() { return this }, describe() { return this }, int() { return this }, positive() { return this }, strict() { return this } })\n" +
+    "const stringSchema = () => ({ optional() { return this }, describe() { return this }, int() { return this }, positive() { return this }, nonnegative() { return this }, strict() { return this } })\n" +
       "export const tool = (definition) => definition\n" +
-      "tool.schema = Object.fromEntries(['string', 'number', 'boolean', 'array', 'union', 'object', 'tuple', 'literal'].map(k => [k, stringSchema]))\n",
+      "tool.schema = Object.fromEntries(['string', 'number', 'boolean', 'array', 'union', 'object', 'tuple', 'literal', 'unknown'].map(k => [k, stringSchema]))\n",
   )
 
   const validateTool = (await import(pathToFileURL(
@@ -133,6 +133,21 @@ test("host release package passes validate/write/read smoke", {
   assert.equal(afterExternal.shader.code, replacement)
 
   const patchTool = (await import(pathToFileURL(path.join(staged.tools, "godot-shader-write-patch.ts")).href)).default
+  const diffTool = (await import(pathToFileURL(path.join(staged.tools, "godot-shader-diff.ts")).href)).default
+  const codec = await import(pathToFileURL(path.join(staged.tools, "godot_shader_reader/codec.ts")).href)
+  const material = codec.parseResource(await readFile(materialPath))
+  material.resource.parsedInternalResources.at(-1).properties.push({ name: "shader_param/TexSize", offset: 0, value: { type: "real", type_id: 4, value: 0.5 } })
+  const paramPath = path.join(directory, "params.material")
+  await writeFile(paramPath, codec.serializeResource(material))
+  const paramRead = JSON.parse(await readTool.execute({ path: paramPath }, context))
+  assert.equal(paramRead.params.materials[0].properties[0].value, 0.5)
+  const paramPatch = JSON.parse(await patchTool.execute({ path: paramPath, expected_resource_hash: paramRead.resource_hash,
+    ops: [{ setParam: { name: "TexSize", value: 1 }, expect: 1 }] }, context))
+  assert.equal(paramPatch.success, true)
+  const materialDiff = JSON.parse(await diffTool.execute({ before: materialPath, after: paramPath }, context))
+  assert.equal(materialDiff.success, true)
+  assert.equal(materialDiff.parameter_diff[0].change, "added")
+  assert.match(materialDiff.difference_table, /TexSize/)
   const planTool = (await import(pathToFileURL(path.join(staged.tools, "godot-shader-write-plan.ts")).href)).default
   const searchTool = (await import(pathToFileURL(path.join(staged.tools, "godot-shader-search.ts")).href)).default
   const metadata = JSON.parse(await readTool.execute({ path: "test.material", metadata_only: true }, context))

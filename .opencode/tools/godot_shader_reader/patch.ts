@@ -1,7 +1,13 @@
 import { GodotReaderError } from "./errors.ts"
 import { sourceLines } from "./source-info.ts"
 
+export interface ParamPatchOp {
+  setParam: { name: string; value: unknown; type?: string; internal_resource_index?: number; expected_value?: unknown }
+  expect: number
+}
+
 export type ShaderPatchOp =
+  | ParamPatchOp
   | { find: string; replace: string; expect: number }
   | { delete_lines: [number, number]; expect: number; expected_text: string }
 
@@ -9,8 +15,16 @@ export type ShaderPatchOp =
 export function parsePatchOps(value: unknown): ShaderPatchOp[] {
   if (!Array.isArray(value) || value.length === 0) throw new GodotReaderError("INVALID_PATCH", "ops must be a non-empty array")
   return value.map((op, index) => {
-    const invalid = () => new GodotReaderError("INVALID_PATCH", "Each op needs literal find/replace/expect or delete_lines/expected_text/expect", { details: { op_index: index } })
+    const invalid = () => new GodotReaderError("INVALID_PATCH", "Each op needs literal find/replace/expect, delete_lines/expected_text/expect, or setParam/expect", { details: { op_index: index } })
     if (!op || typeof op !== "object" || !Number.isSafeInteger(op.expect) || op.expect < 1) throw invalid()
+    if (op.setParam && typeof op.setParam === "object" && !Array.isArray(op.setParam) && Object.keys(op).every(k => ["setParam", "expect"].includes(k))) {
+      const p = op.setParam
+      if (typeof p.name !== "string" || !/^[A-Za-z_]\w*$/.test(p.name) || !("value" in p) ||
+          (p.type !== undefined && typeof p.type !== "string") ||
+          (p.internal_resource_index !== undefined && (!Number.isSafeInteger(p.internal_resource_index) || p.internal_resource_index < 0)) ||
+          Object.keys(p).some(k => !["name", "value", "type", "internal_resource_index", "expected_value"].includes(k))) throw invalid()
+      return { setParam: { ...p }, expect: op.expect }
+    }
     if (typeof op.find === "string" && op.find.length > 0 && typeof op.replace === "string" && Object.keys(op).every((k) => ["find", "replace", "expect"].includes(k))) {
       return { find: op.find, replace: op.replace, expect: op.expect }
     }
@@ -27,6 +41,7 @@ export function parsePatchOps(value: unknown): ShaderPatchOp[] {
 export function applyShaderPatch(code: string, operations: unknown): string {
   const ops = parsePatchOps(operations)
   for (const [index, op] of ops.entries()) {
+    if ("setParam" in op) throw new GodotReaderError("INVALID_PATCH", "setParam requires the material file writer")
     if ("find" in op) {
       const chunks = code.split(op.find)
       const count = chunks.length - 1

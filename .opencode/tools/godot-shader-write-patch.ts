@@ -5,13 +5,15 @@ import { resolveInputPath } from "./godot_shader_reader/input-path.ts"
 import { toPublicError } from "./godot_shader_reader/errors.ts"
 
 export default tool({
-  description: "Apply literal, count-asserted Shader patches internally without transferring full source. All ops succeed or no write occurs. External references modify the shared Shader. Mandatory official pre/post validation and read-back; returns hashes and unified diff.",
+  description: "Apply literal, count-asserted Shader patches internally without transferring full source. All ops succeed or no write occurs. setParam changes existing material values, retaining Variant types. Parameter-only edits keep shared external Shaders untouched. Mixed edits of two files are rejected. Mandatory official pre/post validation and read-back; returns hashes and unified diff.",
   args: {
     path: tool.schema.string().describe("Material or standalone Shader path"),
     ops: tool.schema.array(tool.schema.union([
+      tool.schema.object({ setParam: tool.schema.object({ name: tool.schema.string(), value: tool.schema.unknown(), type: tool.schema.string().optional(), internal_resource_index: tool.schema.number().int().nonnegative().optional(), expected_value: tool.schema.unknown().optional() }).strict(), expect: tool.schema.number().int().positive() }).strict(),
       tool.schema.object({ find: tool.schema.string(), replace: tool.schema.string(), expect: tool.schema.number().int().positive() }).strict(),
       tool.schema.object({ delete_lines: tool.schema.tuple([tool.schema.number().int().positive(), tool.schema.number().int().positive()]), expected_text: tool.schema.string(), expect: tool.schema.literal(1) }).strict(),
     ])).describe("Sequential operations; delete_lines uses current 1-based inclusive lines and requires exact expected_text including line endings"),
+    expected_resource_hash: tool.schema.string().optional().describe("Expected SHA-256 of material file bytes, guards parameter edits"),
     expected_hash: tool.schema.string().optional().describe("Expected SHA-256 of full decoded source"),
     project_root: tool.schema.string().optional(),
     shader_path: tool.schema.string().optional(),
@@ -23,7 +25,7 @@ export default tool({
     try {
       const target = resolveInputPath(args.path, context.worktree)
       const result = await patchGodotShaderFile(target, parsePatchOps(args.ops), {
-        expectedHash: args.expected_hash, dryRun: args.dry_run,
+        expectedResourceHash: args.expected_resource_hash, expectedHash: args.expected_hash, dryRun: args.dry_run,
         godotVersion: args.godot_version, renderer: args.renderer,
         ...(args.project_root === undefined ? {} : { projectRoot: resolveInputPath(args.project_root, context.worktree) }),
         ...(args.shader_path === undefined ? {} : { shaderPath: resolveInputPath(args.shader_path, context.worktree) }),

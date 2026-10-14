@@ -608,3 +608,69 @@ See [`docs/GODOT-3.6-FORMAT.md`](docs/GODOT-3.6-FORMAT.md) for binary layout and
 official Loader/Saver mapping, and
 [`docs/WRITER-VALIDATION.md`](docs/WRITER-VALIDATION.md) for the recorded test,
 native runtime, and PE inspection results.
+
+### Material parameters and comparison
+
+`godot-shader-read` now defaults to `params: true` (use `false` for source-only
+reads). `params.materials` contains each internal ShaderMaterial, its
+`internal_resource_index`, and `properties` entries with uniform `name`, original
+property name, Variant `type`, `type_id`, and `value`. Color/vector values are
+numeric arrays; real/double retain their original binary Variant type. Each
+external texture parameter includes `external_resource: {id, type, path}`.
+`params.external_resources` maps **zero-based binary table ids** to paths and
+`bindings: [{internal_resource_index, uniform}]`; inline references have `id: null`.
+These ids are not the one-based ids of text `.tres` files.
+
+Each material has a lexical `uniforms` index with `assigned`, `source`, and
+`default_expression`, plus `unassigned_uniforms`. Nil/empty object parameters
+count as unassigned. Defaults are reported as expressions, never evaluated.
+Embedded Shader declarations are indexed per material; for external Shaders the
+resolved root Shader is indexed. Other unresolved external Shaders report
+`uniform_index_available: false`. Parameters also appear in metadata-only and
+line-range reads. `resource_hash` is SHA-256 of the original material bytes.
+
+`godot-shader-write-patch` accepts existing-parameter updates:
+
+```json
+{
+  "path": "materials/road.material",
+  "expected_resource_hash": "<resource_hash from read>",
+  "expected_hash": "<shader.hash from read>",
+  "ops": [
+    {"setParam": {"name": "TexSize", "value": 1, "type": "real"}, "expect": 1},
+    {"setParam": {"name": "Col", "value": [0.35, 0.38, 0.42, 1]}, "expect": 1},
+    {"setParam": {"name": "ColFar", "value": [0.35, 0.38, 0.42, 1]}, "expect": 1}
+  ]
+}
+```
+
+`expect` asserts the number of matching properties across ShaderMaterials.
+Supply `setParam.internal_resource_index` to select one material, and optional
+`expected_value` to assert its exact stored old value (including float32
+rounding). `type` asserts the existing Variant type; omitted type is preserved.
+Supported updates: real, double, int, bool, string, Color and fixed-size numeric
+vector/matrix/geometry tuples. Float32 values are rounded to their stored values;
+non-finite/overflowing values, wrong shapes, type changes, missing parameters,
+new parameters, and texture/reference mutations are rejected. External resources
+and other properties remain unchanged. Results include `param_changes` and
+before/after material hashes alongside the existing code diff and validation.
+
+Code and parameter edits on one embedded material share an atomic transaction,
+mandatory official Shader pre/post validation, temporary-file read-back, semantic
+verification and concurrent-change checks. Parameter-only edits of a material
+with an external Shader write **the material** and preserve the shared Shader.
+A single patch combining material parameters and a changed external Shader is
+rejected because it would require a two-file transaction. `dry_run` performs all
+checks without replacing the original. `expected_hash` still guards only source;
+use `expected_resource_hash` to guard parameter state. Write plans accept this
+new hash and detect collisions using the actual material or Shader target.
+
+`godot-shader-diff` takes `before` and `after` file paths. It returns a unified
+Shader code diff, `parameter_diff` rows (added/removed/changed, types and values),
+and a Markdown `difference_table`. Texture bindings compare resolved paths and
+types, so a reordered external table alone produces no parameter difference.
+Root materials match by role, internal materials by their local resource paths.
+Optional `before_project_root`, `after_project_root`, `before_shader_path`, and
+`after_shader_path` resolve external Shaders independently. All diff operations
+are read-only. This comparison covers stored overrides, rather than evaluating
+Shader default expressions or loading texture pixels.

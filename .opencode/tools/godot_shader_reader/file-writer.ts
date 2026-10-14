@@ -5,10 +5,11 @@ import path from "node:path"
 import type { ZstdDecoder } from "./rscc.ts"
 import type { ZstdEncoder } from "./rscc-writer.ts"
 import { readGodotShaderFile } from "./file-reader.ts"
+import { prepareMaterialWrite, resourceHash } from "./material-params.ts"
 import { prepareShaderWrite } from "./shader-rewrite.ts"
 import { GodotReaderError } from "./errors.ts"
 import { shaderHash, unifiedDiff } from "./source-info.ts"
-import { applyShaderPatch, type ShaderPatchOp } from "./patch.ts"
+import { applyShaderPatch, parsePatchOps, type ShaderPatchOp, type ParamPatchOp } from "./patch.ts"
 import {
   validateGodot36Shader,
   requireValidatorProfile,
@@ -25,6 +26,9 @@ export interface ShaderWriteValidation {
 }
 
 export interface ShaderFileWriteResult {
+  param_changes?: unknown[]
+  before_resource_hash?: string
+  after_resource_hash?: string
   resource_type: string
   written_path: string
   source: "embedded" | "external" | "standalone"
@@ -43,6 +47,7 @@ export interface ShaderFileWriteOptions {
   shaderValidator?: ShaderValidator
   projectRoot?: string
   shaderPath?: string
+  expectedResourceHash?: string
   expectedHash?: string
   expectedTarget?: string
   dryRun?: boolean
@@ -70,13 +75,17 @@ export async function patchGodotShaderFile(
   ops: ShaderPatchOp[],
   options: ShaderFileWriteOptions = {},
 ): Promise<ShaderFileWriteResult> {
-  return writeShaderFile(targetPath, (original) => applyShaderPatch(original, ops), options)
+  const parsed = parsePatchOps(ops)
+  const params = parsed.filter((op): op is ParamPatchOp => "setParam" in op)
+  const codeOps = parsed.filter(op => !("setParam" in op))
+  return writeShaderFile(targetPath, original => codeOps.length ? applyShaderPatch(original, codeOps) : original, options, params)
 }
 
 async function writeShaderFile(
   targetPath: string,
   replacement: string | ((original: string) => string),
   options: ShaderFileWriteOptions,
+  paramOps: ParamPatchOp[] = [],
 ): Promise<ShaderFileWriteResult> {
   requireValidatorProfile(options)
   const shaderValidator = options.shaderValidator ?? validateGodot36Shader
@@ -85,7 +94,16 @@ async function writeShaderFile(
   const inputPath = await realpath(targetPath)
   const inputBytes = await readFile(inputPath)
   const located = await readGodotShaderFile(inputPath, options)
-  targetPath = located.shader.path
+  if (options.expectedResourceHash !== undefined && options.expectedResourceHash !== resourceHash(inputBytes)) {
+    throw new GodotReaderError("RESOURCE_HASH_MISMATCH", "Material differs from the expected file hash")
+  }
+  const hasParams = paramOps.length > 0
+  const shaderCode = typeof replacement === "string" ? replacement : replacement(located.shader.code)
+  const codeChanges = shaderCode !== located.shader.code
+  if (hasParams && located.shader.source === "external" && codeChanges) {
+    throw new GodotReaderError("INVALID_PATCH", "Cannot atomically patch material params and a shared external Shader in one operation")
+  }
+  targetPath = hasParams ? inputPath : located.shader.path
   if (options.expectedTarget !== undefined && targetPath !== options.expectedTarget) {
     throw new GodotReaderError("UNEXPECTED_RESOURCE_CHANGE", "Shader target changed after plan resolution")
   }
@@ -94,14 +112,15 @@ async function writeShaderFile(
       details: { expected: options.expectedHash, actual: located.shader.hash },
     })
   }
-  const shaderCode = typeof replacement === "string" ? replacement : replacement(located.shader.code)
   const originalBytes = await readFile(targetPath)
   // Refuse to proceed if either input changed during resolution.
   if (!bytesEqual(inputBytes, await readFile(inputPath))) {
     throw new GodotReaderError("UNEXPECTED_RESOURCE_CHANGE", "Input changed during Shader resolution")
   }
   if (typeof replacement !== "string") await requireValidShader(shaderCode, shaderValidator, "pre_write")
-  const rewritten = prepareShaderWrite(originalBytes, targetPath, shaderCode, options)
+  const rewritten = hasParams
+    ? prepareMaterialWrite(originalBytes, located.shader.code, shaderCode, paramOps, options)
+    : prepareShaderWrite(originalBytes, targetPath, shaderCode, options)
   if (rewritten.beforeCode !== located.shader.code) {
     throw new GodotReaderError("UNEXPECTED_RESOURCE_CHANGE", "Shader source changed during resolution")
   }
@@ -136,7 +155,7 @@ async function writeShaderFile(
     await requireValidShader(verifiedCode, shaderValidator, "post_write")
 
     const currentLocation = await readGodotShaderFile(inputPath, options)
-    if (currentLocation.shader.path !== targetPath || !bytesEqual(inputBytes, await readFile(inputPath))) {
+    if (currentLocation.shader.hash !== located.shader.hash || (hasParams ? inputPath : currentLocation.shader.path) !== targetPath || !bytesEqual(inputBytes, await readFile(inputPath))) {
       throw new GodotReaderError("UNEXPECTED_RESOURCE_CHANGE", "Input or Shader reference changed while preparing the write")
     }
     const currentBytes = await readFile(targetPath)
@@ -152,10 +171,12 @@ async function writeShaderFile(
       tempExists = false
     }
     return {
+      ...(hasParams ? { param_changes: (rewritten as ReturnType<typeof prepareMaterialWrite>).paramChanges,
+        before_resource_hash: resourceHash(originalBytes), after_resource_hash: resourceHash(rewritten.bytes) } : {}),
       resource_type: rewritten.resourceType,
       written_path: targetPath,
       source: located.shader.source,
-      ...(located.shader.source === "external" ? { shared_shader: true as const, resource_path: located.shader.resource_path } : {}),
+      ...(!hasParams && located.shader.source === "external" ? { shared_shader: true as const, resource_path: located.shader.resource_path } : {}),
       validation: {
         pre_write_shader: true,
         resource_read_back: true,

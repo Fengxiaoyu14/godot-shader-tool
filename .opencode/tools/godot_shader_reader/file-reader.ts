@@ -7,9 +7,11 @@ import { getMaterialShaderReference, type BinaryResourceModel } from "./resource
 import { readEmbeddedShader, type ShaderReadResult } from "./shader-reader.ts"
 import type { ZstdDecoder } from "./rscc.ts"
 import { decodeShaderUtf8, readTextShader } from "./text-shader.ts"
+import { materialParams, resourceHash } from "./material-params.ts"
 import { shaderHash } from "./source-info.ts"
 
 export interface ShaderFileReadOptions {
+  params?: boolean
   projectRoot?: string
   shaderPath?: string
   zstdDecoder?: ZstdDecoder
@@ -17,6 +19,8 @@ export interface ShaderFileReadOptions {
 
 export interface ShaderFileReadResult {
   path: string
+  resource_hash?: string
+  params?: ReturnType<typeof materialParams>
   container: ShaderReadResult["container"] | { format: "text" | "source"; uncompressed_size: number }
   resource: ShaderReadResult["resource"] | { type: "Shader"; format_version?: number }
   shader: {
@@ -42,11 +46,12 @@ export async function readGodotShaderFile(
   const input = await readRegularFile(path.resolve(inputPath), false)
   const parsed = isBinary(input.bytes) ? parseResource(input.bytes, options.zstdDecoder) : undefined
   if (parsed?.resource.type === "ShaderMaterial") {
+    const extra = options.params === false ? {} : { resource_hash: resourceHash(input.bytes), params: materialParams(parsed.resource) }
     const { reference } = getMaterialShaderReference(parsed.resource)
     if (reference.kind === "internal") {
       rejectUnusedOverride(options)
-      const result = readEmbeddedShader(parsed)
-      return { path: input.path, ...result, shader: { ...result.shader, source: "embedded", path: input.path } }
+      const { params: embeddedParams, ...result } = readEmbeddedShader(parsed)
+      return { path: input.path, ...result, ...extra, shader: { ...result.shader, source: "embedded", path: input.path } }
     }
     const details: Record<string, unknown> = { material_path: input.path, dependency_path: reference.path }
     try {
@@ -57,6 +62,8 @@ export async function readGodotShaderFile(
       const shader = readStandaloneShader(dependency.bytes, dependency.path, options.zstdDecoder)
       return {
         path: input.path,
+        ...extra,
+        ...(options.params === false ? {} : { params: materialParams(parsed.resource, shader.code) }),
         container: parsed.container,
         resource: describeBinaryResource(parsed.resource),
         shader: {

@@ -8,6 +8,7 @@ import { GodotReaderError, toPublicError, type PublicError } from "./errors.ts"
 interface PlanEntry {
   path: string
   ops: ShaderPatchOp[]
+  expected_resource_hash?: string
   expected_hash?: string
   project_root?: string
   shader_path?: string
@@ -21,7 +22,7 @@ export async function applyShaderPlan(planPath: string, options: ShaderFileWrite
   catch (cause) { throw new GodotReaderError("INVALID_PLAN", "Could not read a JSON plan", { cause }) }
   if (!Array.isArray(json) || json.length === 0) throw new GodotReaderError("INVALID_PLAN", "Plan must be a non-empty JSON array")
   const base = path.dirname(planPath)
-  type Prepared = { index: number; path?: string; entry?: PlanEntry; target?: string; hash?: string; options?: ShaderFileWriteOptions; error?: PublicError }
+  type Prepared = { index: number; path?: string; entry?: PlanEntry; target?: string; hash?: string; resourceHash?: string; options?: ShaderFileWriteOptions; error?: PublicError }
   const prepared: Prepared[] = []
   // Resolve every actual target BEFORE any mutation, including shared dependencies.
   for (const [index, raw] of json.entries()) {
@@ -37,7 +38,8 @@ export async function applyShaderPlan(planPath: string, options: ShaderFileWrite
         ...(entry.shader_path === undefined ? {} : { shaderPath: path.resolve(base, entry.shader_path) }),
       }
       const read = await readGodotShaderFile(item.path, item.options)
-      item.target = read.shader.path
+      item.target = entry.ops.some(op => "setParam" in op) ? read.path : read.shader.path
+      item.resourceHash = read.resource_hash
       item.hash = read.shader.hash
     } catch (error) { item.error = toPublicError(error) }
   }
@@ -60,6 +62,7 @@ export async function applyShaderPlan(planPath: string, options: ShaderFileWrite
     try {
       const result = await patchGodotShaderFile(item.path!, item.entry!.ops, {
         ...item.options,
+        expectedResourceHash: item.entry!.expected_resource_hash ?? item.resourceHash,
         expectedHash: item.entry!.expected_hash ?? item.hash,
         expectedTarget: item.target,
       })
@@ -79,9 +82,10 @@ export async function applyShaderPlan(planPath: string, options: ShaderFileWrite
 function parseEntry(value: unknown): PlanEntry {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new GodotReaderError("INVALID_PLAN", "Plan entry must be an object")
   const entry = value as Record<string, unknown>
-  if (Object.keys(entry).some((key) => !["path", "ops", "expected_hash", "project_root", "shader_path"].includes(key)) ||
+  if (Object.keys(entry).some((key) => !["path", "ops", "expected_resource_hash", "expected_hash", "project_root", "shader_path"].includes(key)) ||
       typeof entry.path !== "string" || entry.path.trim().length === 0 ||
       ["project_root", "shader_path"].some((key) => entry[key] !== undefined && (typeof entry[key] !== "string" || !entry[key].trim())) ||
+      (entry.expected_resource_hash !== undefined && (typeof entry.expected_resource_hash !== "string" || !/^[a-f0-9]{64}$/.test(entry.expected_resource_hash))) ||
       (entry.expected_hash !== undefined && (typeof entry.expected_hash !== "string" || !/^[a-f0-9]{64}$/.test(entry.expected_hash)))) {
     throw new GodotReaderError("INVALID_PLAN", "Invalid plan fields: require path, ops, optional expected_hash/project_root/shader_path")
   }

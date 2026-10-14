@@ -1,9 +1,11 @@
 import { parseResource, type ParsedResource } from "./codec.ts"
 import { extractShaderCode } from "./resource.ts"
 import type { ContainerMetadata, ZstdDecoder } from "./rscc.ts"
+import { materialParams } from "./material-params.ts"
 import { shaderHash } from "./source-info.ts"
 
 export interface ShaderReadResult {
+  params?: ReturnType<typeof materialParams>
   container: ContainerMetadata
   resource: {
     type: string
@@ -33,6 +35,7 @@ export function readEmbeddedShader(parsed: ParsedResource): ShaderReadResult {
   const extracted = extractShaderCode(model)
 
   return {
+    params: materialParams(model),
     container: parsed.container,
     resource: {
       type: model.type,

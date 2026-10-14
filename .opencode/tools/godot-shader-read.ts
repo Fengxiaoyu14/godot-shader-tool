@@ -14,6 +14,7 @@ export default tool({
     path: tool.schema.string().describe("Absolute or current-worktree-relative material or Shader file path"),
     project_root: tool.schema.string().optional().describe("Godot project root for res:// paths; auto-detected from the material if omitted"),
     shader_path: tool.schema.string().optional().describe("Explicit external Shader file override, e.g. a separately uploaded or renamed dependency"),
+    params: tool.schema.boolean().optional().describe("Return material parameter values, texture bindings and unassigned uniforms; default true"),
     metadata_only: tool.schema.boolean().optional().describe("Omit source; return hash, lengths, lexical uniform/function index"),
     start_line: tool.schema.number().int().positive().optional().describe("First source line, 1-based and inclusive"),
     end_line: tool.schema.number().int().positive().optional().describe("Last source line, inclusive; hash always covers full source"),
@@ -21,6 +22,7 @@ export default tool({
   async execute(args, context) {
     try {
       const result = await readGodotShaderFile(resolveInputPath(args.path, context.worktree), {
+        params: args.params,
         ...(args.project_root === undefined ? {} : { projectRoot: resolveInputPath(args.project_root, context.worktree) }),
         ...(args.shader_path === undefined ? {} : { shaderPath: resolveInputPath(args.shader_path, context.worktree) }),
       })
