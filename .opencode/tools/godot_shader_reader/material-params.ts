@@ -23,14 +23,14 @@ export function materialParams(model: BinaryResourceModel, rootCode?: string) {
   const materials = model.parsedInternalResources.filter(r => r.type === "ShaderMaterial").map(r => {
     const reference = r.properties.find(p => p.name === "shader")?.value.value as any
     const shader = reference?.kind === "internal_resource"
-      ? model.parsedInternalResources.find(s => s.path === `local://${reference.index}` && s.type === "Shader") : undefined
+      ? (model.versionMajor === 4 && (model.reservedFields[0]! & 1) ? model.parsedInternalResources[reference.index] : model.parsedInternalResources.find(s => s.path === `local://${reference.index}` && s.type === "Shader")) : undefined
     const code = shader?.properties.find(p => p.name === "code")?.value.value
     const resolvedCode = typeof code === "string" ? code : r.index === model.parsedInternalResources.length - 1 ? rootCode : undefined
-    const properties = r.properties.filter(p => p.name.startsWith("shader_param/")).map(p => {
+    const properties = r.properties.filter(p => p.name.startsWith(model.versionMajor === 4 ? "shader_parameter/" : "shader_param/")).map(p => {
       const v = p.value.value as any
       const ext = p.value.type === "object" && v?.kind === "external_resource_index" ? model.externalResources[v.index] : undefined
       const inline = p.value.type === "object" && v?.kind === "external_resource" ? v : undefined
-      return { name: p.name.slice(13), property: p.name, ...p.value,
+      return { name: p.name.slice(model.versionMajor === 4 ? 17 : 13), property: p.name, ...p.value,
         ...(ext ? { external_resource: { id: v.index, ...ext } } : inline ? { external_resource: { id: null, type: inline.type, path: inline.path } } : {}) }
     })
     const assigned = new Set(properties.filter(p => p.type !== "nil" && !(p.type === "object" && (p.value as any)?.kind === "empty")).map(p => p.name))
@@ -50,7 +50,7 @@ export function prepareMaterialWrite(original: Uint8Array, beforeCode: string, c
   const changes: unknown[] = []
   for (const [opIndex, op] of ops.entries()) {
     const matches = working.resource.parsedInternalResources.filter(r => r.type === "ShaderMaterial" && (op.setParam.internal_resource_index === undefined || r.index === op.setParam.internal_resource_index))
-      .flatMap(r => r.properties.filter(p => p.name === `shader_param/${op.setParam.name}`).map(p => ({ r, p })))
+      .flatMap(r => r.properties.filter(p => p.name === `${working.resource.versionMajor === 4 ? "shader_parameter" : "shader_param"}/${op.setParam.name}`).map(p => ({ r, p })))
     if (matches.length !== op.expect) throw new GodotReaderError("PATCH_EXPECT_MISMATCH", "Parameter count assertion failed", { details: { op_index: opIndex, expected: op.expect, actual: matches.length } })
     for (const { r, p } of matches) {
       if (op.setParam.type !== undefined && op.setParam.type !== p.value.type) throw new GodotReaderError("INVALID_PATCH", "setParam.type must match the existing Variant type")

@@ -86,10 +86,10 @@ test("search returns grouped hashes, literal or regex lines, pagination and corr
   await assert.rejects(() => searchGodotShaders("[", directory, { regex: true }), /regular expression/)
 })
 
-test("validator selection never silently validates 3.5 or 4.x with the 3.6 compiler", async () => {
+test("validator selection rejects unsupported 3.x and renderer profiles", async () => {
   const request = { shader_code: "shader_type spatial;" }
   assert.equal((await validateShaderRequest({ ...request, godot_version: "3.6", renderer: "gles3" }, ".")).valid, true)
-  for (const options of [{ godot_version: "3.5" }, { godot_version: "4.3" }, { renderer: "gles2" }]) {
+  for (const options of [{ godot_version: "3.5" }, { renderer: "gles2" }]) {
     await assert.rejects(() => validateShaderRequest({ ...request, ...options }, "."), /Only the official/)
   }
 })

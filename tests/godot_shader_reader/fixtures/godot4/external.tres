@@ -1,0 +1,9 @@
+[gd_resource type="ShaderMaterial" load_steps=2 format=4]
+
+[ext_resource type="Shader" path="res://external.gdshader" id="1_0in8p"]
+
+[resource]
+render_priority = 0
+shader = ExtResource("1_0in8p")
+shader_parameter/tint = Color(0.2, 0.4, 0.6, 1)
+metadata/types = [Vector2i(-1, 2), Rect2i(1, 2, 3, 4), Vector3i(1, 2, 3), Vector4(1, 2, 3, 4), Vector4i(4, 3, 2, 1), Projection(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1), &"name", NodePath("node:property"), PackedInt64Array(9223372036854775807, -9223372036854775807), PackedFloat64Array(1.123456789), PackedVector4Array(1, 2, 3, 4), Callable(), Signal()]

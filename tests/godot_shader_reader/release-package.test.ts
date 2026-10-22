@@ -179,4 +179,18 @@ test("host release package passes validate/write/read smoke", {
   const unsupported = JSON.parse(await planTool.execute({ plan_path: "plan.json", godot_version: "4.3" }, context))
   assert.equal(unsupported.results[0].error.code, "UNSUPPORTED_VALIDATOR_PROFILE")
 
+  if (process.env.GODOT4_BIN) {
+    // Exercise installed OpenCode wrappers and packaged GDScript, not source imports.
+    const godot4 = path.join(directory, "godot4.tres")
+    const source4 = "shader_type spatial;\nuniform vec4 tint : source_color;\nvoid fragment(){ ALBEDO=tint.rgb; }"
+    await writeFile(godot4, '[gd_resource type="Shader" format=3]\n[resource]\ncode=' + JSON.stringify(source4))
+    const valid4 = JSON.parse(await validateTool.execute({ path: godot4 }, context))
+    assert.equal(valid4.valid, true)
+    assert.equal(valid4.renderer, "dummy")
+    const written4 = JSON.parse(await writeTool.execute({ path: godot4, shader_code: source4 + "\n// replacement" }, context))
+    assert.equal(written4.success, true)
+    const read4 = JSON.parse(await readTool.execute({ path: godot4 }, context))
+    assert.equal(read4.shader.code, source4 + "\n// replacement")
+  }
+
 })

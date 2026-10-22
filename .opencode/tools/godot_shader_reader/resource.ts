@@ -43,6 +43,7 @@ export interface BinaryResourceModel {
   // Opaque legacy uint64, unused by the Godot 3.5/3.6 loader. Large values
   // use decimal strings so the model stays exact and JSON serializable.
   importMetadataOffset: number | string
+  scriptClass?: string
   reservedFields: number[]
   stringTable: string[]
   externalResources: ExternalResource[]
@@ -77,7 +78,7 @@ export function parseBinaryResource(bytes: Uint8Array, resourceHeaderOffset: num
   // Godot writes this first flag before enabling endian swapping.
   const bigEndianValue = reader.readU32()
   if (bigEndianValue !== 0) {
-    throw new GodotReaderError("UNSUPPORTED_ENDIAN", "Big-endian Godot 3.6 resources are not supported", {
+    throw new GodotReaderError("UNSUPPORTED_ENDIAN", "Big-endian Godot resources are not supported", {
       offset: resourceHeaderOffset,
       details: { big_endian: bigEndianValue },
     })
@@ -89,11 +90,10 @@ export function parseBinaryResource(bytes: Uint8Array, resourceHeaderOffset: num
   const formatVersion = reader.readU32()
 
   if (
-    versionMajor !== GODOT_VERSION_MAJOR ||
-    !GODOT_VERSION_MINORS.includes(versionMinor) ||
-    formatVersion !== BINARY_FORMAT_VERSION
+    !(versionMajor === GODOT_VERSION_MAJOR && GODOT_VERSION_MINORS.includes(versionMinor) && formatVersion === BINARY_FORMAT_VERSION) &&
+    !(versionMajor === 4 && versionMinor >= 0 && formatVersion >= 3 && formatVersion <= 6)
   ) {
-    throw new GodotReaderError("UNSUPPORTED_RESOURCE_VERSION", "Only Godot 3.5/3.6 binary format version 3 is supported", {
+    throw new GodotReaderError("UNSUPPORTED_RESOURCE_VERSION", "Supported binary formats: Godot 3.5/3.6 format 3 and Godot 4.x formats 3 through 6", {
       offset: resourceHeaderOffset + VERSION_FIELDS_OFFSET,
       details: {
         version_major: versionMajor,
@@ -109,8 +109,13 @@ export function parseBinaryResource(bytes: Uint8Array, resourceHeaderOffset: num
     ? Number(rawImportMetadataOffset)
     : rawImportMetadataOffset.toString()
   const reservedFields: number[] = []
+  let scriptClass: string | undefined
   for (let index = 0; index < RESERVED_FIELD_COUNT; index++) {
+    if (versionMajor === 4 && index === 3 && (reservedFields[0]! & 8)) scriptClass = readUnicodeString(reader)
     reservedFields.push(reader.readU32())
+  }
+  if (versionMajor === 4 && (reservedFields[0]! & ~15)) {
+    throw new GodotReaderError("UNSUPPORTED_RESOURCE_VERSION", "Unknown Godot 4 binary header flags")
   }
 
   const stringTableSize = readTableCount(reader, "string table")
@@ -125,6 +130,7 @@ export function parseBinaryResource(bytes: Uint8Array, resourceHeaderOffset: num
     externalResources.push({
       type: readUnicodeString(reader),
       path: readUnicodeString(reader),
+      ...(versionMajor === 4 && (reservedFields[0]! & 2) ? { uid: reader.readU64().toString() } : {}),
     })
   }
 
@@ -164,6 +170,7 @@ export function parseBinaryResource(bytes: Uint8Array, resourceHeaderOffset: num
     formatVersion,
     type,
     importMetadataOffset,
+    ...(scriptClass === undefined ? {} : { scriptClass }),
     reservedFields,
     stringTable,
     externalResources,
@@ -261,8 +268,10 @@ export function extractShaderCode(model: BinaryResourceModel): ExtractedShaderRe
     })
   }
   const shaderSubindex = reference.index
-  const shaderIndex = model.internalResources.findIndex((entry) => entry.path === `local://${shaderSubindex}`)
-  if (shaderIndex < 0) {
+  const shaderIndex = model.versionMajor === 4 && (model.reservedFields[0]! & 1)
+    ? shaderSubindex
+    : model.internalResources.findIndex((entry) => entry.path === `local://${shaderSubindex}`)
+  if (shaderIndex < 0 || shaderIndex >= model.internalResources.length) {
     throw new GodotReaderError("SHADER_NOT_FOUND", `Internal Shader local://${shaderSubindex} is missing`, {
       offset: shaderProperty.offset,
       details: { subindex: shaderSubindex },
@@ -344,6 +353,8 @@ function parseInternalResourceBody(model: BinaryResourceModel, index: number): P
       resourceType: type,
       propertyName: name,
       formatVersion: model.formatVersion,
+      versionMajor: model.versionMajor,
+      real64: model.versionMajor === 4 && !!(model.reservedFields[0]! & 4),
     })
     properties.push({ name, value, offset: propertyOffset })
   }

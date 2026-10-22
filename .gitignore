@@ -1,5 +1,6 @@
 private-samples/
 node_modules/
+.work/
 dist/
 validator/.build/
 godot-validation/output.material

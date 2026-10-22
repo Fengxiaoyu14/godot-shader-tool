@@ -39,6 +39,8 @@ export async function stageReleasePackage(repositoryRoot, destination, platform)
   }
 
   await cp(path.join(repositoryRoot, "README.md"), path.join(destination, "README.md"))
+  await mkdir(path.join(destination, "docs"), { recursive: true })
+  await cp(path.join(repositoryRoot, "docs/GODOT-4-SUPPORT.md"), path.join(destination, "docs/GODOT-4-SUPPORT.md"))
   await cp(path.join(repositoryRoot, "opencode.json"), path.join(destination, "opencode.example.json"))
   await cp(path.join(repositoryRoot, "validator/LICENSE.txt"), path.join(destination, "GODOT-LICENSE.txt"))
 

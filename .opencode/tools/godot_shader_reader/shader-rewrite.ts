@@ -2,7 +2,7 @@ import path from "node:path"
 import { parseResource, rewriteShaderCode, validateContainerPreserved, validateShaderOnlyChange } from "./codec.ts"
 import { extractShaderCode } from "./resource.ts"
 import { GodotReaderError } from "./errors.ts"
-import { decodeShaderUtf8, inspectTextShader } from "./text-shader.ts"
+import { decodeShaderUtf8, inspectTextResource } from "./text-shader.ts"
 import { encodeUtf8Exact } from "./strings.ts"
 import type { ZstdDecoder } from "./rscc.ts"
 import type { ZstdEncoder } from "./rscc-writer.ts"
@@ -42,16 +42,17 @@ export function prepareShaderWrite(
 
   const originalText = decodeShaderUtf8(original, true)
   const raw = [".shader", ".gdshader"].includes(path.extname(filePath).toLowerCase())
-  const inspected = raw ? undefined : inspectTextShader(originalText)
+  const inspected = raw ? undefined : inspectTextResource(originalText)
+  if (inspected?.externalPath) throw new GodotReaderError("EXTERNAL_SHADER_REQUIRES_FILE", "Resolve the external Shader before writing")
   const beforeCode = inspected?.code ?? decodeShaderUtf8(original)
   const prefix = inspected ? originalText.slice(0, inspected.start) : originalText.startsWith("\uFEFF") ? "\uFEFF" : ""
   const suffix = inspected ? originalText.slice(inspected.end) : ""
   const output = prefix + (inspected ? JSON.stringify(code) : code) + suffix
   return {
-    bytes: new TextEncoder().encode(output), beforeCode, resourceType: "Shader",
+    bytes: new TextEncoder().encode(output), beforeCode, resourceType: inspected?.type ?? "Shader",
     verify(bytes) {
       const text = decodeShaderUtf8(bytes, true)
-      const parsed = raw ? undefined : inspectTextShader(text)
+      const parsed = raw ? undefined : inspectTextResource(text)
       const actual = parsed?.code ?? decodeShaderUtf8(bytes)
       if (actual !== code) throw new GodotReaderError("SHADER_VERIFY_FAILED", "Read-back Shader.code does not match shader_code")
       if (parsed && (text.slice(0, parsed.start) !== prefix || text.slice(parsed.end) !== suffix)) {

@@ -1,6 +1,18 @@
-# Godot 3.5/3.6 Shader Validate/Read/Write Tools for OpenCode
+# Godot 3.5/3.6 and 4.x Shader Validate/Read/Write Tools for OpenCode
 
 Current release: **v1.3.0** — guarded patches, batch plans and source inspection.
+
+Godot **4.x read, write and validate** are now supported on main. See
+[Godot 4 support and setup](docs/GODOT-4-SUPPORT.md) for the supported formats,
+examples and verification. Godot 4 validation requires an installed official
+Godot **4.3+** engine (`GODOT4_BIN`); **4.5.1** is the tested reference. It uses
+the official headless dummy compiler, without a GPU. Resource files select the
+compiler major automatically; for raw `.gdshader` or direct source, select
+`godot_version: "4.x"`. Godot 3 keeps its bundled 3.6 GLES3 compiler.
+
+The reference below describes the original **Godot 3.5/3.6** workflow. Godot 4
+format and compiler differences are documented in the linked support guide.
+
 
 This repository provides OpenCode custom tools for Godot **3.5/3.6** binary
 `ShaderMaterial` resources and standalone Shader reads:

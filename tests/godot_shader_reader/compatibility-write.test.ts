@@ -75,7 +75,7 @@ for (const minor of [5, 6]) {
 }
 
 test("unsupported major/minor/format are rejected by both reader and writer", () => {
-  for (const [major, minor, format] of [[4, 0, 3], [3, 4, 3], [3, 7, 3], [3, 6, 4], [3, 5, 2]]) {
+  for (const [major, minor, format] of [[5, 0, 3], [3, 4, 3], [3, 7, 3], [3, 6, 4], [3, 5, 2]]) {
     const bytes = minimalShaderMaterial()
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
     view.setUint32(12, major, true)

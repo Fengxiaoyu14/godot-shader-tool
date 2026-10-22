@@ -120,6 +120,7 @@ export function validateShaderOnlyChange(
   compare(before.versionMajor, after.versionMajor, "resource.version_major")
   compare(before.versionMinor, after.versionMinor, "resource.version_minor")
   compare(before.formatVersion, after.formatVersion, "resource.format_version")
+  compare(before.scriptClass, after.scriptClass, "resource.script_class")
   compare(before.importMetadataOffset, after.importMetadataOffset, "resource.import_metadata_offset")
   compareSemantic(before.reservedFields, after.reservedFields, "resource.reserved_fields")
   compareSemantic(before.externalResources, after.externalResources, "resource.external_resources")

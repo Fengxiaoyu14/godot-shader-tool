@@ -4,12 +4,15 @@ import { writeStringReference, writeUnicodeString } from "./strings.ts"
 import { OBJECT, VARIANT, type VariantValue } from "./variant.ts"
 
 export interface VariantWriteContext {
+  versionMajor?: number
+  real64?: boolean
   stringIndexes: ReadonlyMap<string, number>
   resourceType: string
   propertyName: string
 }
 
 export function writeVariant(writer: BinaryWriter, variant: VariantValue, context: VariantWriteContext): void {
+  if (variant.type_id >= 42 && context.versionMajor !== 4) throw unsupportedVariant(variant, context)
   writer.writeU32(variant.type_id)
 
   switch (variant.type_id) {
@@ -33,12 +36,44 @@ export function writeVariant(writer: BinaryWriter, variant: VariantValue, contex
       return
     case VARIANT.REAL:
       requireType(variant, "real", context)
-      writer.writeF32(requireNumber(variant, context))
+      if (context.real64) writer.writeF64(requireNumber(variant, context))
+      else writer.writeF32(requireNumber(variant, context))
       return
     case VARIANT.DOUBLE:
       requireType(variant, "double", context)
       writer.writeF64(requireNumber(variant, context))
       return
+    case VARIANT.CALLABLE:
+    case VARIANT.SIGNAL:
+      requireType(variant, variant.type_id === VARIANT.CALLABLE ? "callable" : "signal", context)
+      requireValue(variant.value === null, variant, context)
+      return
+    case VARIANT.STRING_NAME:
+      requireType(variant, "string_name", context)
+      requireValue(typeof variant.value === "string", variant, context)
+      writeUnicodeString(writer, variant.value as string)
+      return
+    case VARIANT.VECTOR2I:
+    case VARIANT.RECT2I:
+    case VARIANT.VECTOR3I:
+    case VARIANT.VECTOR4I: {
+      const sizes = { 45: ["vector2i", 2], 46: ["rect2i", 4], 47: ["vector3i", 3], 51: ["vector4i", 4] } as const
+      const [name, size] = sizes[variant.type_id]
+      requireType(variant, name, context)
+      for (const value of requireNumberArray(variant, context, size)) writer.writeI32(value)
+      return
+    }
+    case VARIANT.VECTOR4: writeRealTuple(writer, variant, "vector4", 4, context); return
+    case VARIANT.PROJECTION: writeRealTuple(writer, variant, "projection", 16, context); return
+    case VARIANT.INT64_ARRAY: {
+      requireType(variant, "int64_array", context)
+      const values = requireStringArrayValue(variant.value, variant, context)
+      writer.writeU32(values.length)
+      for (const value of values) writer.writeI64(value)
+      return
+    }
+    case VARIANT.DOUBLE_ARRAY: writeScalarArray(writer, variant, "double_array", context, v => writer.writeF64(v)); return
+    case VARIANT.VECTOR4_ARRAY: writeTupleArray(writer, variant, "vector4_array", 4, context); return
     case VARIANT.STRING:
       requireType(variant, "string", context)
       requireValue(typeof variant.value === "string", variant, context)
@@ -126,7 +161,8 @@ function writeRealTuple(
   requireType(variant, expectedType, context)
   const values = requireNumberArray(variant, context, size)
   for (const value of values) {
-    writer.writeF32(value)
+    if (context.real64 && expectedType !== "color") writer.writeF64(value)
+    else writer.writeF32(value)
   }
 }
 
@@ -251,7 +287,8 @@ function writeTupleArray(
     const values = tuple as unknown[]
     requireValue(values.length === tupleSize && values.every((value) => typeof value === "number"), variant, context)
     for (const value of values) {
-      writer.writeF32(value as number)
+      if (context.real64 && expectedType !== "color_array") writer.writeF64(value as number)
+      else writer.writeF32(value as number)
     }
   }
 }

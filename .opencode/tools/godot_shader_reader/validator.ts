@@ -1,3 +1,4 @@
+import { validateGodot4Shader } from "./validator4.ts"
 import { spawn } from "node:child_process"
 import { stat } from "node:fs/promises"
 import { fileURLToPath } from "node:url"
@@ -9,15 +10,15 @@ const MAX_OUTPUT_BYTES = 1024 * 1024
 
 export interface ShaderValidationSuccess {
   valid: true
-  godot_version: "3.6"
-  renderer: "gles3"
-  shader_type: "spatial" | "canvas_item" | "particles"
+  godot_version: string
+  renderer: string
+  shader_type: string
 }
 
 export interface ShaderValidationFailure {
   valid: false
-  godot_version: "3.6"
-  renderer: "gles3"
+  godot_version: string
+  renderer: string
   shader_type?: string
   error: {
     line: number
@@ -36,11 +37,32 @@ export interface ShaderValidatorOptions {
 }
 
 export function requireValidatorProfile(options: { godotVersion?: string; renderer?: string }): void {
+  if (isGodot4Profile(options.godotVersion)) {
+    if (options.renderer !== undefined && options.renderer !== "dummy") throw new GodotReaderError("UNSUPPORTED_VALIDATOR_PROFILE", "Godot 4 validation uses the official headless dummy compiler; GPU renderer profiles are not supported")
+    return
+  }
   if ((options.godotVersion ?? "3.6") !== "3.6" || (options.renderer ?? "gles3") !== "gles3") {
     throw new GodotReaderError("UNSUPPORTED_VALIDATOR_PROFILE", "Only the official Godot 3.6 GLES3 validator is bundled", {
-      details: { requested: { godot_version: options.godotVersion ?? "3.6", renderer: options.renderer ?? "gles3" }, supported: [{ godot_version: "3.6", renderer: "gles3" }] },
+      details: { requested: { godot_version: options.godotVersion ?? "3.6", renderer: options.renderer ?? "gles3" }, supported: [{ godot_version: "3.6", renderer: "gles3" }, { godot_version: "4.x", renderer: "dummy" }] },
     })
   }
+}
+
+export function isGodot4Profile(version?: string): boolean {
+  return version !== undefined && /^(4|4\.x|4\.\d+)$/.test(version)
+}
+
+export function resourceValidatorOptions(resource: { version_major?: number; format_version?: number }, options: ShaderValidatorOptions): ShaderValidatorOptions {
+  const major = resource.version_major ?? (resource.format_version !== undefined ? (resource.format_version >= 3 ? 4 : 3) : undefined)
+  if (major !== undefined && options.godotVersion !== undefined && (isGodot4Profile(options.godotVersion) ? 4 : 3) !== major) {
+    throw new GodotReaderError("UNSUPPORTED_VALIDATOR_PROFILE", "Validator major version must match the resource major version")
+  }
+  return { ...options, godotVersion: options.godotVersion ?? (major === 4 ? "4.x" : "3.6") }
+}
+
+export function createShaderValidator(options: ShaderValidatorOptions = {}): ShaderValidator {
+  requireValidatorProfile(options)
+  return isGodot4Profile(options.godotVersion) ? code => validateGodot4Shader(code, options) : code => validateGodot36Shader(code, options)
 }
 
 export function bundledValidatorPath(
@@ -70,6 +92,7 @@ export async function validateGodot36Shader(
   options: ShaderValidatorOptions = {},
 ): Promise<ShaderValidationResult> {
   requireValidatorProfile(options)
+  if (isGodot4Profile(options.godotVersion)) throw new GodotReaderError("UNSUPPORTED_VALIDATOR_PROFILE", "Use createShaderValidator for Godot 4 profiles")
   const executablePath = options.executablePath ?? bundledValidatorPath()
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) {

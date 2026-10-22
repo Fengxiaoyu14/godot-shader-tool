@@ -32,7 +32,7 @@ code = "shader_type spatial;\n// [resource] and code = are shader text\n"
 
 for (const [name, text, expected] of [
   ["wrong root type", resource.replace('type="Shader"', 'type="Texture"') + 'code = "x"', "NOT_SHADER_RESOURCE"],
-  ["Godot 4 format", resource.replace("format=2", "format=3") + 'code = "x"', "UNSUPPORTED_RESOURCE_VERSION"],
+  ["future format", resource.replace("format=2", "format=5") + 'code = "x"', "UNSUPPORTED_RESOURCE_VERSION"],
   ["wrong header", '[gd_scene format=2]\n[resource]\ncode="x"', "INVALID_TEXT_RESOURCE"],
   ["missing root code", resource + 'resource_name = "code=fake"', "SHADER_CODE_NOT_FOUND"],
   ["subresource-only code", header + '[sub_resource type="Shader" id=1]\ncode="fake"', "SHADER_CODE_NOT_FOUND"],

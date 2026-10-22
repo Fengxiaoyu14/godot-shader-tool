@@ -64,13 +64,14 @@ class Tokens {
         if (ch === "\\") {
           if (this.position === this.text.length) break
           ch = this.text[this.position++]!
-          if (ch === "u") {
-            const hex = this.text.slice(this.position, this.position + 4)
-            if (!/^[0-9a-fA-F]{4}$/.test(hex)) {
+          if (ch === "u" || ch === "U") {
+            const size = ch === "U" ? 6 : 4
+            const hex = this.text.slice(this.position, this.position + size)
+            if (hex.length !== size || !/^[0-9a-fA-F]+$/.test(hex) || parseInt(hex, 16) > 0x10ffff) {
               this.fail("Malformed Unicode escape in String", { ...start, kind: "string", value: "" })
             }
-            this.position += 4
-            ch = String.fromCharCode(parseInt(hex, 16))
+            this.position += size
+            ch = String.fromCodePoint(parseInt(hex, 16))
           } else {
             // Godot passes unknown escapes through, dropping the backslash.
             const escapes: Record<string, string> = { b: "\b", t: "\t", n: "\n", f: "\f", r: "\r" }
@@ -101,6 +102,11 @@ function skipValue(tokens: Tokens, depth = 0): void {
   const token = tokens.next()
   if (token.kind === "string") return
   if (token.kind === "word") {
+    if ((token.value === "&" || token.value === "^") && tokens.peek().kind === "string") { tokens.next(); return }
+    if (isSymbol(tokens.peek(), "[")) {
+      tokens.next()
+      skipSequence(tokens, "]", false, depth)
+    }
     if (!isSymbol(tokens.peek(), "(")) return
     tokens.next()
     skipSequence(tokens, ")", false, depth)
@@ -145,54 +151,88 @@ export function readTextShader(text: string): string {
   return inspectTextShader(text).code
 }
 
-export function inspectTextShader(text: string): { code: string; start: number; end: number } {
+export interface TextResourceInspection {
+  type: "Shader" | "ShaderMaterial"
+  formatVersion: number
+  code?: string
+  start?: number
+  end?: number
+  externalPath?: string
+}
+
+export function inspectTextResource(text: string): TextResourceInspection {
   const tokens = new Tokens(text)
   const header = readTag(tokens)
   if (header.name !== "gd_resource") tokens.fail("Expected a gd_resource header")
   const type = header.attributes.get("type")
-  if (type?.kind !== "string" || type.value !== "Shader") {
-    throw new GodotReaderError("NOT_SHADER_RESOURCE", "Text resource root must be Shader", {
+  if (type?.kind !== "string" || !["Shader", "ShaderMaterial"].includes(type.value)) {
+    throw new GodotReaderError("NOT_SHADER_RESOURCE", "Text resource root must be Shader or ShaderMaterial", {
       details: { resource_type: type?.value },
     })
   }
   const format = header.attributes.get("format")
-  if (format?.kind !== "word" || format.value !== "2") {
-    throw new GodotReaderError("UNSUPPORTED_RESOURCE_VERSION", "Only Godot 3 text resource format=2 is supported")
+  if (format?.kind !== "word" || !["2", "3", "4"].includes(format.value)) {
+    throw new GodotReaderError("UNSUPPORTED_RESOURCE_VERSION", "Supported text resource formats are 2, 3 and 4")
   }
-  let section = ""
+  const sections: Array<{ name: string; attributes: Map<string, Token>; properties: Map<string, Token> }> = []
+  let current: typeof sections[number] | undefined
   let rootSeen = false
-  let start = -1
-  let end = -1
-  let code: string | undefined
   while (tokens.peek().kind !== "eof") {
     if (isSymbol(tokens.peek(), "[")) {
       const tag = readTag(tokens)
-      if (rootSeen || !["resource", "sub_resource", "ext_resource"].includes(tag.name)) {
-        tokens.fail("Unexpected resource section")
-      }
-      section = tag.name
-      if (section === "resource") rootSeen = true
+      if (rootSeen || !["resource", "sub_resource", "ext_resource"].includes(tag.name)) tokens.fail("Unexpected resource section")
+      if (tag.name === "resource") rootSeen = true
+      current = { ...tag, properties: new Map() }
+      sections.push(current)
       continue
     }
     const property = tokens.next()
     if (property.kind !== "word" && property.kind !== "string") tokens.fail("Expected a property name", property)
-    if (section !== "resource" && section !== "sub_resource") tokens.fail("Property outside a resource section", property)
+    if (!current || !["resource", "sub_resource"].includes(current.name)) tokens.fail("Property outside a resource section", property)
+    if (current!.properties.has(property.value)) tokens.fail("Duplicate resource property", property)
     tokens.expect("=")
-    if (section === "resource" && property.value === "code") {
-      if (code !== undefined) tokens.fail("Duplicate root Shader.code", property)
-      const value = tokens.next()
-      if (value.kind !== "string") {
-        throw new GodotReaderError("SHADER_CODE_NOT_STRING", "Shader.code must be a String", { line: value.line })
-      }
-      code = value.value
-      start = value.offset
-      end = value.end!
-    } else skipValue(tokens)
+    const value = tokens.peek()
+    if (property.value === "shader" && value.kind === "word" && ["SubResource", "ExtResource"].includes(value.value)) {
+      tokens.next(); tokens.expect("(")
+      const id = tokens.next()
+      if (!["word", "string"].includes(id.kind)) tokens.fail("Invalid resource reference", id)
+      tokens.expect(")")
+      current!.properties.set(property.value, { ...id, kind: "word", value: value.value + ":" + id.value })
+    } else {
+      skipValue(tokens)
+      current!.properties.set(property.value, value)
+    }
   }
-  if (code === undefined || code.length === 0) {
-    throw new GodotReaderError("SHADER_CODE_NOT_FOUND", "Root Shader has no non-empty code property")
+  const root = sections.find(s => s.name === "resource")
+  if (!root) throw new GodotReaderError("SHADER_CODE_NOT_FOUND", "Missing root resource section")
+  let shader = root
+  if (type.value === "ShaderMaterial") {
+    const reference = root!.properties.get("shader")?.value
+    if (!reference) throw new GodotReaderError("SHADER_NOT_FOUND", "ShaderMaterial.shader is missing")
+    const split = reference.indexOf(":")
+    const kind = reference.slice(0, split), id = reference.slice(split + 1)
+    const matches = sections.filter(s => s.name === (kind === "SubResource" ? "sub_resource" : "ext_resource") && s.attributes.get("id")?.value === id)
+    if (!["SubResource", "ExtResource"].includes(kind) || matches.length !== 1) throw new GodotReaderError("SHADER_NOT_FOUND", "Shader reference cannot be resolved uniquely")
+    shader = matches[0]
+    if (shader!.attributes.get("type")?.value !== "Shader") throw new GodotReaderError("NOT_SHADER_RESOURCE", "Material reference must point to Shader")
+    if (kind === "ExtResource") {
+      const path = shader!.attributes.get("path")
+      if (path?.kind !== "string") tokens.fail("External Shader requires a path")
+      return { type: "ShaderMaterial", formatVersion: Number(format.value), externalPath: path!.value }
+    }
   }
-  return { code, start, end }
+  const code = shader!.properties.get("code")
+  if (code && code.kind !== "string") throw new GodotReaderError("SHADER_CODE_NOT_STRING", "Shader.code must be a String", { line: code.line })
+  if (!code?.value.length) throw new GodotReaderError("SHADER_CODE_NOT_FOUND", "Shader has no non-empty code property")
+  return { type: type.value as "Shader" | "ShaderMaterial", formatVersion: Number(format.value), code: code.value, start: code.offset, end: code.end! }
+}
+
+export function inspectTextShader(text: string): { code: string; start: number; end: number } {
+  const header = readTag(new Tokens(text))
+  if (header.name === "gd_resource" && header.attributes.get("type")?.value !== "Shader") throw new GodotReaderError("NOT_SHADER_RESOURCE", "Text resource root must be Shader")
+  const inspected = inspectTextResource(text)
+  if (inspected.type !== "Shader") throw new GodotReaderError("NOT_SHADER_RESOURCE", "Text resource root must be Shader")
+  return { code: inspected.code!, start: inspected.start!, end: inspected.end! }
 }
 
 export function decodeShaderUtf8(bytes: Uint8Array, preserveBom = false): string {

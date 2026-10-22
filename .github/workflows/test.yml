@@ -1,0 +1,37 @@
+name: Test Godot 3 and 4 read-write-validate
+
+on: [push, pull_request, workflow_dispatch]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install official Godot 4.5.1 (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          curl --fail --location --retry 3 https://github.com/godotengine/godot/releases/download/4.5.1-stable/Godot_v4.5.1-stable_linux.x86_64.zip -o "$RUNNER_TEMP/godot.zip"
+          unzip -q "$RUNNER_TEMP/godot.zip" -d "$RUNNER_TEMP/godot4"
+          chmod +x "$RUNNER_TEMP/godot4/Godot_v4.5.1-stable_linux.x86_64"
+          echo "GODOT4_BIN=$RUNNER_TEMP/godot4/Godot_v4.5.1-stable_linux.x86_64" >> "$GITHUB_ENV"
+      - name: Install official Godot 4.5.1 (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Invoke-WebRequest https://github.com/godotengine/godot/releases/download/4.5.1-stable/Godot_v4.5.1-stable_win64.exe.zip -OutFile "$env:RUNNER_TEMP/godot.zip"
+          Expand-Archive "$env:RUNNER_TEMP/godot.zip" "$env:RUNNER_TEMP/godot4"
+          "GODOT4_BIN=$env:RUNNER_TEMP/godot4/Godot_v4.5.1-stable_win64.exe" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Unit, official compiler, engine reload and installed package tests
+        run: node --test tests/godot_shader_reader/*.test.ts

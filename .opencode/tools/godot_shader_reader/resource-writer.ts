@@ -32,7 +32,10 @@ export function serializeBinaryResource(
   writer.writeU64(typeof resource.importMetadataOffset === "string"
     ? BigInt(resource.importMetadataOffset)
     : resource.importMetadataOffset)
-  for (const reserved of resource.reservedFields) {
+  for (const [index, reserved] of resource.reservedFields.entries()) {
+    if (resource.versionMajor === 4 && index === 3 && (resource.reservedFields[0]! & 8)) {
+      writeUnicodeString(writer, resource.scriptClass ?? "")
+    }
     writer.writeU32(reserved)
   }
 
@@ -47,6 +50,7 @@ export function serializeBinaryResource(
   for (const external of resource.externalResources) {
     writeUnicodeString(writer, external.type)
     writeUnicodeString(writer, external.path)
+    if (resource.versionMajor === 4 && (resource.reservedFields[0]! & 2)) writer.writeU64(BigInt(external.uid ?? "18446744073709551615"))
   }
 
   writer.writeU32(resource.parsedInternalResources.length)
@@ -67,6 +71,8 @@ export function serializeBinaryResource(
         stringIndexes,
         resourceType: internal.type,
         propertyName: property.name,
+        versionMajor: resource.versionMajor,
+        real64: resource.versionMajor === 4 && !!(resource.reservedFields[0]! & 4),
       })
     }
   }
@@ -93,8 +99,9 @@ function validateWritableResource(resource: GodotResource): void {
   if (resource.bigEndian) {
     throw new GodotReaderError("UNSUPPORTED_RESOURCE_FOR_WRITE", "Big-endian resources cannot be written safely")
   }
-  if (resource.versionMajor !== 3 || ![5, 6].includes(resource.versionMinor) || resource.formatVersion !== 3) {
-    throw new GodotReaderError("UNSUPPORTED_RESOURCE_FOR_WRITE", "Only Godot 3.5/3.6 binary format version 3 can be written")
+  if (!(resource.versionMajor === 3 && [5, 6].includes(resource.versionMinor) && resource.formatVersion === 3) &&
+    !(resource.versionMajor === 4 && resource.versionMinor >= 0 && resource.formatVersion >= 3 && resource.formatVersion <= 6)) {
+    throw new GodotReaderError("UNSUPPORTED_RESOURCE_FOR_WRITE", "Supported write formats: Godot 3.5/3.6 format 3 and Godot 4.x formats 3 through 6")
   }
   if (typeof resource.importMetadataOffset === "string" && !/^(0|[1-9][0-9]{0,19})$/.test(resource.importMetadataOffset)) {
     throw new GodotReaderError(
@@ -104,7 +111,7 @@ function validateWritableResource(resource: GodotResource): void {
     )
   }
   if (resource.reservedFields.length !== RESERVED_FIELD_COUNT) {
-    throw new GodotReaderError("SERIALIZATION_FAILED", "Godot 3.6 resource must contain 14 reserved header fields", {
+    throw new GodotReaderError("SERIALIZATION_FAILED", "Resource header must contain 14 fixed header words", {
       details: { reserved_field_count: resource.reservedFields.length },
     })
   }

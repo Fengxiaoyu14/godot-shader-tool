@@ -32,6 +32,10 @@ export const VARIANT = {
   VECTOR2_ARRAY: 37,
   INT64: 40,
   DOUBLE: 41,
+  CALLABLE: 42, SIGNAL: 43, STRING_NAME: 44,
+  VECTOR2I: 45, RECT2I: 46, VECTOR3I: 47,
+  INT64_ARRAY: 48, DOUBLE_ARRAY: 49,
+  VECTOR4: 50, VECTOR4I: 51, PROJECTION: 52, VECTOR4_ARRAY: 53,
 } as const
 
 export const OBJECT = {
@@ -45,6 +49,7 @@ const MAX_COLLECTION_LENGTH = 1_000_000
 const MAX_RECURSION_DEPTH = 64
 
 export interface ExternalResource {
+  uid?: string
   type: string
   path: string
 }
@@ -60,6 +65,8 @@ export interface VariantContext {
   externalResources: readonly ExternalResource[]
   resourceType: string
   propertyName: string
+  versionMajor?: number
+  real64?: boolean
   formatVersion: number
   depth?: number
 }
@@ -75,6 +82,7 @@ export function parseVariant(reader: BinaryReader, context: VariantContext): Var
     })
   }
 
+  if (type >= 42 && type <= 53 && context.versionMajor !== 4) throw new GodotReaderError("UNSUPPORTED_VARIANT_TYPE", `Godot 4 Variant type ${type} in a legacy resource`, { offset: typeOffset, details: variantDetails(context, type) })
   switch (type) {
     case VARIANT.NIL:
       return variant("nil", null, type)
@@ -85,29 +93,41 @@ export function parseVariant(reader: BinaryReader, context: VariantContext): Var
     case VARIANT.INT64:
       return variant("int64", reader.readI64().toString(), type)
     case VARIANT.REAL:
-      return variant("real", reader.readF32(), type)
+      return variant("real", context.real64 ? reader.readF64() : reader.readF32(), type)
     case VARIANT.DOUBLE:
       return variant("double", reader.readF64(), type)
+    case VARIANT.CALLABLE: return variant("callable", null, type)
+    case VARIANT.SIGNAL: return variant("signal", null, type)
+    case VARIANT.STRING_NAME: return variant("string_name", readUnicodeString(reader), type)
+    case VARIANT.VECTOR2I: return variant("vector2i", Array.from({ length: 2 }, () => reader.readI32()), type)
+    case VARIANT.RECT2I: return variant("rect2i", Array.from({ length: 4 }, () => reader.readI32()), type)
+    case VARIANT.VECTOR3I: return variant("vector3i", Array.from({ length: 3 }, () => reader.readI32()), type)
+    case VARIANT.VECTOR4I: return variant("vector4i", Array.from({ length: 4 }, () => reader.readI32()), type)
+    case VARIANT.VECTOR4: return variant("vector4", readReals(reader, 4, context.real64), type)
+    case VARIANT.PROJECTION: return variant("projection", readReals(reader, 16, context.real64), type)
+    case VARIANT.INT64_ARRAY: return parseFixedArray(reader, type, "int64_array", () => reader.readI64().toString())
+    case VARIANT.DOUBLE_ARRAY: return parseFixedArray(reader, type, "double_array", () => reader.readF64())
+    case VARIANT.VECTOR4_ARRAY: return parseFixedArray(reader, type, "vector4_array", () => readReals(reader, 4, context.real64))
     case VARIANT.STRING:
       return variant("string", readUnicodeString(reader), type)
     case VARIANT.VECTOR2:
-      return variant("vector2", readReals(reader, 2), type)
+      return variant("vector2", readReals(reader, 2, context.real64), type)
     case VARIANT.RECT2:
-      return variant("rect2", readReals(reader, 4), type)
+      return variant("rect2", readReals(reader, 4, context.real64), type)
     case VARIANT.VECTOR3:
-      return variant("vector3", readReals(reader, 3), type)
+      return variant("vector3", readReals(reader, 3, context.real64), type)
     case VARIANT.PLANE:
-      return variant("plane", readReals(reader, 4), type)
+      return variant("plane", readReals(reader, 4, context.real64), type)
     case VARIANT.QUAT:
-      return variant("quat", readReals(reader, 4), type)
+      return variant("quat", readReals(reader, 4, context.real64), type)
     case VARIANT.AABB:
-      return variant("aabb", readReals(reader, 6), type)
+      return variant("aabb", readReals(reader, 6, context.real64), type)
     case VARIANT.MATRIX3:
-      return variant("basis", readReals(reader, 9), type)
+      return variant("basis", readReals(reader, 9, context.real64), type)
     case VARIANT.TRANSFORM:
-      return variant("transform", readReals(reader, 12), type)
+      return variant("transform", readReals(reader, 12, context.real64), type)
     case VARIANT.MATRIX32:
-      return variant("transform2d", readReals(reader, 6), type)
+      return variant("transform2d", readReals(reader, 6, context.real64), type)
     case VARIANT.COLOR:
       return variant("color", readReals(reader, 4), type)
     case VARIANT.NODE_PATH:
@@ -129,9 +149,9 @@ export function parseVariant(reader: BinaryReader, context: VariantContext): Var
     case VARIANT.STRING_ARRAY:
       return parseFixedArray(reader, type, "string_array", () => readUnicodeString(reader))
     case VARIANT.VECTOR2_ARRAY:
-      return parseFixedArray(reader, type, "vector2_array", () => readReals(reader, 2))
+      return parseFixedArray(reader, type, "vector2_array", () => readReals(reader, 2, context.real64))
     case VARIANT.VECTOR3_ARRAY:
-      return parseFixedArray(reader, type, "vector3_array", () => readReals(reader, 3))
+      return parseFixedArray(reader, type, "vector3_array", () => readReals(reader, 3, context.real64))
     case VARIANT.COLOR_ARRAY:
       return parseFixedArray(reader, type, "color_array", () => readReals(reader, 4))
     default:
@@ -246,10 +266,10 @@ function parseFixedArray<T>(
   return variant(name, values, type)
 }
 
-function readReals(reader: BinaryReader, count: number): number[] {
+function readReals(reader: BinaryReader, count: number, real64 = false): number[] {
   const values: number[] = []
   for (let index = 0; index < count; index++) {
-    values.push(reader.readF32())
+    values.push(real64 ? reader.readF64() : reader.readF32())
   }
   return values
 }

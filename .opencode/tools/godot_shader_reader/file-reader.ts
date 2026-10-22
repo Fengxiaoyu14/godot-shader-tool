@@ -6,7 +6,7 @@ import { GodotReaderError } from "./errors.ts"
 import { getMaterialShaderReference, type BinaryResourceModel } from "./resource.ts"
 import { readEmbeddedShader, type ShaderReadResult } from "./shader-reader.ts"
 import type { ZstdDecoder } from "./rscc.ts"
-import { decodeShaderUtf8, readTextShader } from "./text-shader.ts"
+import { decodeShaderUtf8, readTextShader, inspectTextResource } from "./text-shader.ts"
 import { materialParams, resourceHash } from "./material-params.ts"
 import { shaderHash } from "./source-info.ts"
 
@@ -22,7 +22,7 @@ export interface ShaderFileReadResult {
   resource_hash?: string
   params?: ReturnType<typeof materialParams>
   container: ShaderReadResult["container"] | { format: "text" | "source"; uncompressed_size: number }
-  resource: ShaderReadResult["resource"] | { type: "Shader"; format_version?: number }
+  resource: ShaderReadResult["resource"] | { type: "Shader" | "ShaderMaterial"; format_version?: number }
   shader: {
     source: "embedded" | "external" | "standalone"
     path: string
@@ -83,13 +83,32 @@ export async function readGodotShaderFile(
       })
     }
   }
+  if (!parsed && ![".shader", ".gdshader"].includes(path.extname(input.path).toLowerCase())) {
+    const inspected = inspectTextResource(decodeShaderUtf8(input.bytes))
+    if (inspected.type === "ShaderMaterial") {
+      if (!inspected.externalPath) {
+        rejectUnusedOverride(options)
+        return { path: input.path, container: { format: "text", uncompressed_size: input.bytes.length },
+          resource: { type: inspected.type, format_version: inspected.formatVersion },
+          shader: { source: "embedded", path: input.path, code: inspected.code!, length: inspected.code!.length, hash: shaderHash(inspected.code!) } }
+      }
+      const resolved = await resolveDependency(inspected.externalPath, input.path, options)
+      const dependency = await readRegularFile(resolved.path, true)
+      const shader = readStandaloneShader(dependency.bytes, dependency.path, options.zstdDecoder)
+      return { path: input.path, container: { format: "text", uncompressed_size: input.bytes.length },
+        resource: { type: inspected.type, format_version: inspected.formatVersion },
+        shader: { source: "external", path: dependency.path, resource_path: inspected.externalPath,
+          ...(resolved.projectRoot ? { project_root: normalized(resolved.projectRoot) } : {}), overridden: options.shaderPath !== undefined,
+          code: shader.code, length: shader.code.length, hash: shaderHash(shader.code) } }
+    }
+  }
   rejectUnusedOverride(options)
   const shader = readStandaloneShader(input.bytes, input.path, options.zstdDecoder, parsed?.resource)
   return {
     path: input.path,
     container: parsed?.container ?? { format: shader.format, uncompressed_size: input.bytes.byteLength },
     resource: parsed ? describeBinaryResource(parsed.resource) : {
-      type: "Shader", ...(shader.format === "text" ? { format_version: 2 } : {}),
+      type: "Shader", ...(shader.format === "text" ? { format_version: inspectTextResource(decodeShaderUtf8(input.bytes)).formatVersion } : {}),
     },
     shader: { source: "standalone", path: input.path, code: shader.code, length: shader.code.length, hash: shaderHash(shader.code) },
   }

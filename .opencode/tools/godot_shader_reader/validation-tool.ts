@@ -2,7 +2,7 @@ import { readGodotShaderFile } from "./file-reader.ts"
 import { GodotReaderError } from "./errors.ts"
 import { resolveInputPath } from "./input-path.ts"
 import type { ZstdDecoder } from "./rscc.ts"
-import { validateGodot36Shader, requireValidatorProfile, type ShaderValidationResult, type ShaderValidator } from "./validator.ts"
+import { createShaderValidator, resourceValidatorOptions, type ShaderValidationResult, type ShaderValidator } from "./validator.ts"
 
 export interface ShaderValidationRequest {
   shader_code?: string
@@ -23,7 +23,6 @@ export async function validateShaderRequest(
   worktree: string,
   options: ShaderValidationRequestOptions = {},
 ): Promise<ShaderValidationResult> {
-  requireValidatorProfile({ godotVersion: request.godot_version, renderer: request.renderer })
   const hasShaderCode = request.shader_code !== undefined
   const hasPath = request.path !== undefined
   if (hasShaderCode === hasPath) {
@@ -33,12 +32,11 @@ export async function validateShaderRequest(
     )
   }
 
-  const validator = options.validator ?? validateGodot36Shader
   if (hasShaderCode) {
     if (request.project_root !== undefined || request.shader_path !== undefined) {
       throw new GodotReaderError("INVALID_VALIDATE_ARGUMENTS", "project_root and shader_path require path input")
     }
-    return validator(request.shader_code!)
+    return (options.validator ?? createShaderValidator({ godotVersion: request.godot_version, renderer: request.renderer }))(request.shader_code!)
   }
 
   const result = await readGodotShaderFile(resolveInputPath(request.path!, worktree), {
@@ -46,5 +44,5 @@ export async function validateShaderRequest(
     ...(request.shader_path === undefined ? {} : { shaderPath: resolveInputPath(request.shader_path, worktree) }),
     zstdDecoder: options.zstdDecoder,
   })
-  return validator(result.shader.code)
+  return (options.validator ?? createShaderValidator(resourceValidatorOptions(result.resource, { godotVersion: request.godot_version, renderer: request.renderer })))(result.shader.code)
 }

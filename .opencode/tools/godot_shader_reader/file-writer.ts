@@ -11,8 +11,8 @@ import { GodotReaderError } from "./errors.ts"
 import { shaderHash, unifiedDiff } from "./source-info.ts"
 import { applyShaderPatch, parsePatchOps, type ShaderPatchOp, type ParamPatchOp } from "./patch.ts"
 import {
-  validateGodot36Shader,
-  requireValidatorProfile,
+  createShaderValidator,
+  resourceValidatorOptions,
   type ShaderValidationResult,
   type ShaderValidator,
 } from "./validator.ts"
@@ -87,13 +87,11 @@ async function writeShaderFile(
   options: ShaderFileWriteOptions,
   paramOps: ParamPatchOp[] = [],
 ): Promise<ShaderFileWriteResult> {
-  requireValidatorProfile(options)
-  const shaderValidator = options.shaderValidator ?? validateGodot36Shader
-  if (typeof replacement === "string") await requireValidShader(replacement, shaderValidator, "pre_write")
-
   const inputPath = await realpath(targetPath)
   const inputBytes = await readFile(inputPath)
   const located = await readGodotShaderFile(inputPath, options)
+  const profile = resourceValidatorOptions(located.resource, options)
+  const shaderValidator = options.shaderValidator ?? createShaderValidator(profile)
   if (options.expectedResourceHash !== undefined && options.expectedResourceHash !== resourceHash(inputBytes)) {
     throw new GodotReaderError("RESOURCE_HASH_MISMATCH", "Material differs from the expected file hash")
   }
@@ -117,7 +115,7 @@ async function writeShaderFile(
   if (!bytesEqual(inputBytes, await readFile(inputPath))) {
     throw new GodotReaderError("UNEXPECTED_RESOURCE_CHANGE", "Input changed during Shader resolution")
   }
-  if (typeof replacement !== "string") await requireValidShader(shaderCode, shaderValidator, "pre_write")
+  await requireValidShader(shaderCode, shaderValidator, "pre_write")
   const rewritten = hasParams
     ? prepareMaterialWrite(originalBytes, located.shader.code, shaderCode, paramOps, options)
     : prepareShaderWrite(originalBytes, targetPath, shaderCode, options)
