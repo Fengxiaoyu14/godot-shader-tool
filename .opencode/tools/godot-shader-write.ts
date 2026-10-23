@@ -8,14 +8,14 @@ import { resolveInputPath } from "./godot_shader_reader/input-path.ts"
 
 export default tool({
   description:
-    "Replace complete Godot 3.5/3.6 and 4.x Shader code in embedded materials or standalone Shader files. " +
+    "Replace complete Godot 3.x and 4.x Shader code in embedded materials or standalone Shader files. " +
     "For external references, writes the actual shared Shader file and leaves the material unchanged; " +
     "all materials sharing that Shader see the change. Returns written_path. Requires official Godot version-matched " +
     "pre/post validation, exact read-back, non-code preservation and safe replacement.",
   args: {
     path: tool.schema
       .string()
-      .describe("Absolute path or current-worktree-relative path to an Godot 3.5/3.6 and 4.x material or standalone Shader file"),
+      .describe("Absolute path or current-worktree-relative path to an Godot 3.x and 4.x material or standalone Shader file"),
     shader_code: tool.schema.string().describe("Complete replacement Shader.code; preserved exactly without formatting"),
     project_root: tool.schema.string().optional().describe("Godot project root for res:// Shader references"),
     shader_path: tool.schema.string().optional().describe("Explicit external Shader file override; this file will be modified"),

@@ -32,7 +32,8 @@ async function directory(t: TestContext): Promise<string> {
   return root
 }
 
-for (const minor of [5, 6]) {
+// Hypothetical later minors verify that no minor-version allowlist remains.
+for (const minor of [0, 1, 2, 3, 4, 5, 6, 7, 99]) {
   for (const compressed of [false, true]) {
     test(`Godot 3.${minor} ${compressed ? "RSCC" : "RSRC"} embedded read/write preserves version and metadata`, async (t) => {
       const root = await directory(t)
@@ -74,8 +75,8 @@ for (const minor of [5, 6]) {
   }
 }
 
-test("unsupported major/minor/format are rejected by both reader and writer", () => {
-  for (const [major, minor, format] of [[5, 0, 3], [3, 4, 3], [3, 7, 3], [3, 6, 4], [3, 5, 2]]) {
+test("unsupported major/format are rejected by both reader and writer", () => {
+  for (const [major, minor, format] of [[2, 1, 3], [5, 0, 3], [3, 0, 2], [3, 6, 4], [3, 99, 4]]) {
     const bytes = minimalShaderMaterial()
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
     view.setUint32(12, major, true)

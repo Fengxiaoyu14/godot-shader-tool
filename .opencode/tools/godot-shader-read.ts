@@ -6,7 +6,7 @@ import { sourceView } from "./godot_shader_reader/source-info.ts"
 
 export default tool({
   description:
-    "Read complete Godot 3.5/3.6 and 4.x shader source from binary ShaderMaterial resources, including external Shader " +
+    "Read complete Godot 3.x and 4.x shader source from binary ShaderMaterial resources, including external Shader " +
     "references, standalone binary/text Shader resources, or .shader/.gdshader source. " +
     "Resolves res:// via the nearest ancestor project.godot or project_root; shader_path overrides an external dependency. " +
     "Returns source provenance and resource metadata and is strictly read-only.",

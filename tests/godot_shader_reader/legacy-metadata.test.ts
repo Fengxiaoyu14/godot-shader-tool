@@ -17,7 +17,7 @@ function metadataPosition(bytes: Uint8Array, headerOffset: number): number {
   return reader.tell()
 }
 
-for (const minor of [5, 6]) {
+for (const minor of [0, 1, 2, 3, 4, 5, 6]) {
   for (const compressed of [false, true]) {
     for (const legacyValue of [0n, 123n, 9007199254740991n, 9007199254740993n, (1n << 64n) - 29n, (1n << 64n) - 1n]) {
       test(`Godot 3.${minor} ${compressed ? "RSCC" : "RSRC"} preserves legacy uint64 ${legacyValue}`, () => {

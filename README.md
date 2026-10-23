@@ -1,4 +1,4 @@
-# Godot 3.5/3.6 and 4.x Shader Validate/Read/Write Tools for OpenCode
+# Godot 3.x and 4.x Shader Validate/Read/Write Tools for OpenCode
 
 Current release: **v1.3.0** — guarded patches, batch plans and source inspection.
 
@@ -10,7 +10,7 @@ the official headless dummy compiler, without a GPU. Resource files select the
 compiler major automatically; for raw `.gdshader` or direct source, select
 `godot_version: "4.x"`. Godot 3 keeps its bundled 3.6 GLES3 compiler.
 
-The reference below describes the original **Godot 3.5/3.6** workflow. Godot 4
+The reference below describes the original **Godot 3.x** workflow. Godot 4
 format and compiler differences are documented in the linked support guide.
 
 
@@ -598,10 +598,11 @@ errors preserve the original bytes. Private material content is never committed.
 
 ## Current limits
 
-- Binary files: Godot 3.5/3.6 format 3 and Godot 4.x formats 3–6;
-  text formats 2–4. Unknown binary header flags or formats are rejected.
-- Godot 3 uses the bundled 3.6 GLES3 compiler; supporting 3.5 headers does not
-  claim full 3.5 language validation. Godot 4 needs an installed 4.3+ engine
+- Binary files: Godot 3.x format 3 and Godot 4.x formats 3–6;
+  text formats 2–4. Godot 3 minor versions are unrestricted; binary format 3
+  is required. Unknown binary header flags or formats are rejected.
+- Godot 3 uses the bundled 3.6 GLES3 compiler; supporting all 3.x headers does not
+  claim language validation against every original 3.x engine. Godot 4 needs an installed 4.3+ engine
   (4.5.1 is the tested reference); see its setup and context limits above.
 - Little-endian resources only.
 - RSCC compression mode `2` (ZSTD) and uncompressed RSRC only.

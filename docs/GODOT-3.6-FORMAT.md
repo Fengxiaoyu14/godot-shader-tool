@@ -172,19 +172,21 @@ wrong root types, and missing/non-String/empty code are explicit failures.
 The native validator still owns all shader-language syntax and semantic checks.
 
 
-## Godot 3.5 compatibility (v1.2.0)
+## Godot 3.x compatibility
 
-The loader and serializer accept minor versions 5 and 6 with major 3 and binary
-format 3. Header fields, Variant IDs, object reference kinds and NodePath
-encoding match in the official
-[3.5 loader/saver](https://github.com/godotengine/godot/blob/3.5-stable/core/io/resource_format_binary.cpp)
-and
-[3.6 loader/saver](https://github.com/godotengine/godot/blob/3.6-stable/core/io/resource_format_binary.cpp).
-The engine's loader itself checks the binary format and major version, not an
-exact minor-version match. This tool retains an explicit 3.5/3.6 allowlist;
-it does not blindly accept unknown engine or format versions.
+The loader and serializer accept engine major 3 with binary format 3, without
+restricting the engine minor. The official 3.0–3.6 stable sources use format 3
+and the same Variant IDs and object reference kinds. See the
+[3.0 loader/saver](https://github.com/godotengine/godot/blob/3.0-stable/core/io/resource_format_binary.cpp)
+and [3.6 loader/saver](https://github.com/godotengine/godot/blob/3.6-stable/core/io/resource_format_binary.cpp).
+Unknown binary formats and engine majors remain rejected.
 
-Serialization writes the parsed engine major/minor and format values, so editing
-a 3.5 resource does not relabel it as 3.6. Tests cover both versions in RSRC and
-RSCC, embedded Shaders and standalone binary Shader dependencies. The bundled
-shader compiler remains Godot 3.6 GLES3.
+Serialization preserves the original engine major/minor and format values.
+Synthetic-fixture regression tests cover 3.0–3.6 in RSRC and RSCC, embedded
+Shaders, standalone binary Shader dependencies, and legacy metadata. Hypothetical
+later minor values also verify that acceptance depends on the format rather than
+a minor-version allowlist. These are codec tests, not engine-generated fixtures
+or per-version runtime compatibility tests.
+
+The bundled Godot 3 shader compiler remains Godot 3.6 GLES3. Reading or writing
+an older resource does not imply validation against that older engine's rules.

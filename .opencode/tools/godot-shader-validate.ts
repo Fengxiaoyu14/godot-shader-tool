@@ -13,7 +13,7 @@ export default tool({
     path: tool.schema
       .string()
       .optional()
-      .describe("Absolute or current-worktree-relative path to a Godot 3.5/3.6 and 4.x material or Shader file"),
+      .describe("Absolute or current-worktree-relative path to a Godot 3.x and 4.x material or Shader file"),
     project_root: tool.schema.string().optional().describe("Godot project root for res:// paths; auto-detected if omitted"),
     shader_path: tool.schema.string().optional().describe("Explicit external Shader file override for path input"),
     godot_version: tool.schema.string().optional().describe("Validator profile, auto-detected for resources; 3.6 for direct source unless set to 4.x"),

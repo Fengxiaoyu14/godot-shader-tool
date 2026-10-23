@@ -4,7 +4,6 @@ import { readStringReference, readUnicodeString } from "./strings.ts"
 import { parseVariant, type ExternalResource, type VariantValue } from "./variant.ts"
 
 const GODOT_VERSION_MAJOR = 3
-const GODOT_VERSION_MINORS = [5, 6]
 const BINARY_FORMAT_VERSION = 3
 const RESERVED_FIELD_COUNT = 14
 const MAGIC_RSRC = "RSRC"
@@ -90,10 +89,10 @@ export function parseBinaryResource(bytes: Uint8Array, resourceHeaderOffset: num
   const formatVersion = reader.readU32()
 
   if (
-    !(versionMajor === GODOT_VERSION_MAJOR && GODOT_VERSION_MINORS.includes(versionMinor) && formatVersion === BINARY_FORMAT_VERSION) &&
+    !(versionMajor === GODOT_VERSION_MAJOR && formatVersion === BINARY_FORMAT_VERSION) &&
     !(versionMajor === 4 && versionMinor >= 0 && formatVersion >= 3 && formatVersion <= 6)
   ) {
-    throw new GodotReaderError("UNSUPPORTED_RESOURCE_VERSION", "Supported binary formats: Godot 3.5/3.6 format 3 and Godot 4.x formats 3 through 6", {
+    throw new GodotReaderError("UNSUPPORTED_RESOURCE_VERSION", "Supported binary formats: Godot 3.x format 3 and Godot 4.x formats 3 through 6", {
       offset: resourceHeaderOffset + VERSION_FIELDS_OFFSET,
       details: {
         version_major: versionMajor,
