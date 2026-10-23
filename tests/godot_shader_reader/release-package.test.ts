@@ -191,6 +191,25 @@ test("host release package passes validate/write/read smoke", {
     assert.equal(written4.success, true)
     const read4 = JSON.parse(await readTool.execute({ path: godot4 }, context))
     assert.equal(read4.shader.code, source4 + "\n// replacement")
+
+    const material4 = path.join(directory, "material4.tres"), baseline4 = path.join(directory, "baseline4.tres")
+    const fixture4 = await readFile(new URL("./fixtures/godot4/embedded.tres", import.meta.url))
+    await writeFile(material4, fixture4)
+    await writeFile(baseline4, fixture4)
+    const params4 = JSON.parse(await readTool.execute({ path: material4 }, context))
+    assert.equal(params4.params.materials[0].properties[0].name, "tint")
+    const patch4 = JSON.parse(await patchTool.execute({ path: material4, expected_resource_hash: params4.resource_hash, ops: [{ setParam: { name: "tint", value: [1, 0, 0, 1] }, expect: 1 }] }, context))
+    assert.equal(patch4.success, true)
+    const diff4 = JSON.parse(await diffTool.execute({ before: baseline4, after: material4 }, context))
+    assert.equal(diff4.parameter_diff[0].parameter, "root/tint")
+    await writeFile(path.join(directory, "plan4.json"), JSON.stringify([
+      { path: "godot4.tres", ops: [{ find: "tint.rgb", replace: "vec3(0.5)", expect: 1 }], godot_version: "4.x", renderer: "dummy" },
+      { path: "material4.tres", ops: [{ setParam: { name: "tint", value: [0, 1, 0, 1] }, expect: 1 }] },
+    ]))
+    const plan4 = JSON.parse(await planTool.execute({ plan_path: "plan4.json" }, context))
+    assert.equal(plan4.summary.succeeded, 2)
+    const search4 = JSON.parse(await searchTool.execute({ pattern: "tint.rgb", project_root: directory }, context))
+    assert.ok(search4.matches.some(m => m.path.endsWith("material4.tres")))
   }
 
 })

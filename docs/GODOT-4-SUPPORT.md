@@ -61,8 +61,10 @@ godot-shader-write({
 
 Resource paths select the compiler major automatically: binary major 4 or text
 format 3/4 selects Godot 4, while Godot 3 resources retain Godot 3.6 validation.
-A conflicting explicit major is rejected. Raw source files and direct source
-strings have no engine-version header, so select `godot_version: "4.x"`:
+A conflicting explicit major is rejected. Raw source files infer their major
+from the nearest project.godot or an explicit project_root. Outside a recognizable
+project, raw source defaults to 3.6. Direct source strings and detached Godot 4
+source should select `godot_version: "4.x"`:
 
 ```text
 godot-shader-validate({shader_code: "shader_type sky;\nvoid sky(){ COLOR=vec3(0.5); }", godot_version: "4.x"})
@@ -96,3 +98,10 @@ node --test tests/godot_shader_reader/*.test.ts
 
 Use Node 24 for repository tests; OpenCode supplies Bun for the installed tools.
 Engine integration tests skip when `GODOT4_BIN` is absent; CI installs it explicitly.
+
+## Editing feature parity
+
+Patch editing, parameter diff/updates, batch plans, search and installed wrappers
+are covered in the [3.x / 4.x feature audit](GODOT-4-FEATURE-PARITY.md). Text
+materials expose parameter values and resource hashes. Batch entries may supply
+`godot_version` and `renderer` independently.

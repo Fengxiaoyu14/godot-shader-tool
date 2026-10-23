@@ -18,8 +18,8 @@ export default tool({
     project_root: tool.schema.string().optional(),
     shader_path: tool.schema.string().optional(),
     dry_run: tool.schema.boolean().optional().describe("Validate temp read-back and return diff; do not replace original"),
-    godot_version: tool.schema.string().optional().describe("Validator profile, default 3.6"),
-    renderer: tool.schema.string().optional().describe("Validator renderer, default gles3"),
+    godot_version: tool.schema.string().optional().describe("Validator profile: auto-detected for resources/projects; set 4.x for standalone Godot 4 source"),
+    renderer: tool.schema.string().optional().describe("Validator renderer: gles3 for 3.6, dummy for 4.x"),
   },
   async execute(args, context) {
     try {

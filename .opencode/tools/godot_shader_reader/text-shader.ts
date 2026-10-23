@@ -1,6 +1,6 @@
 import { GodotReaderError } from "./errors.ts"
 
-interface Token {
+export interface Token {
   kind: "string" | "word" | "symbol" | "eof"
   value: string
   offset: number
@@ -10,7 +10,8 @@ interface Token {
 
 // Godot 3.6 core/variant_parser.cpp, VariantParser::get_token.
 // This reads resource structure and String values, not shader-language syntax.
-class Tokens {
+export class Tokens {
+  consumedEnd = 0
   private position = 0
   private line = 1
   private lookahead?: Token
@@ -27,6 +28,7 @@ class Tokens {
   next(): Token {
     const token = this.peek()
     this.lookahead = undefined
+    this.consumedEnd = token.end ?? token.offset + token.value.length
     return token
   }
 
@@ -151,7 +153,11 @@ export function readTextShader(text: string): string {
   return inspectTextShader(text).code
 }
 
+export interface TextProperty extends Token { start: number; end: number; raw: string }
+export interface TextSection { name: string; attributes: Map<string, Token>; properties: Map<string, TextProperty> }
+
 export interface TextResourceInspection {
+  sections: TextSection[]
   type: "Shader" | "ShaderMaterial"
   formatVersion: number
   code?: string
@@ -174,7 +180,7 @@ export function inspectTextResource(text: string): TextResourceInspection {
   if (format?.kind !== "word" || !["2", "3", "4"].includes(format.value)) {
     throw new GodotReaderError("UNSUPPORTED_RESOURCE_VERSION", "Supported text resource formats are 2, 3 and 4")
   }
-  const sections: Array<{ name: string; attributes: Map<string, Token>; properties: Map<string, Token> }> = []
+  const sections: TextSection[] = []
   let current: typeof sections[number] | undefined
   let rootSeen = false
   while (tokens.peek().kind !== "eof") {
@@ -197,10 +203,10 @@ export function inspectTextResource(text: string): TextResourceInspection {
       const id = tokens.next()
       if (!["word", "string"].includes(id.kind)) tokens.fail("Invalid resource reference", id)
       tokens.expect(")")
-      current!.properties.set(property.value, { ...id, kind: "word", value: value.value + ":" + id.value })
+      current!.properties.set(property.value, { ...id, kind: "word", value: value.value + ":" + id.value, start: value.offset, end: tokens.consumedEnd, raw: text.slice(value.offset, tokens.consumedEnd) })
     } else {
       skipValue(tokens)
-      current!.properties.set(property.value, value)
+      current!.properties.set(property.value, { ...value, start: value.offset, end: tokens.consumedEnd, raw: text.slice(value.offset, tokens.consumedEnd) })
     }
   }
   const root = sections.find(s => s.name === "resource")
@@ -218,13 +224,13 @@ export function inspectTextResource(text: string): TextResourceInspection {
     if (kind === "ExtResource") {
       const path = shader!.attributes.get("path")
       if (path?.kind !== "string") tokens.fail("External Shader requires a path")
-      return { type: "ShaderMaterial", formatVersion: Number(format.value), externalPath: path!.value }
+      return { sections, type: "ShaderMaterial", formatVersion: Number(format.value), externalPath: path!.value }
     }
   }
   const code = shader!.properties.get("code")
   if (code && code.kind !== "string") throw new GodotReaderError("SHADER_CODE_NOT_STRING", "Shader.code must be a String", { line: code.line })
   if (!code?.value.length) throw new GodotReaderError("SHADER_CODE_NOT_FOUND", "Shader has no non-empty code property")
-  return { type: type.value as "Shader" | "ShaderMaterial", formatVersion: Number(format.value), code: code.value, start: code.offset, end: code.end! }
+  return { sections, type: type.value as "Shader" | "ShaderMaterial", formatVersion: Number(format.value), code: code.value, start: code.offset, end: code.end! }
 }
 
 export function inspectTextShader(text: string): { code: string; start: number; end: number } {

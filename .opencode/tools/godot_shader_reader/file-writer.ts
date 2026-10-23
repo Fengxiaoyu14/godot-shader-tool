@@ -96,19 +96,19 @@ async function writeShaderFile(
     throw new GodotReaderError("RESOURCE_HASH_MISMATCH", "Material differs from the expected file hash")
   }
   const hasParams = paramOps.length > 0
+  if (options.expectedHash !== undefined && options.expectedHash !== located.shader.hash) {
+    throw new GodotReaderError("SHADER_HASH_MISMATCH", "Shader differs from the expected source hash", {
+      details: { expected: options.expectedHash, actual: located.shader.hash },
+    })
+  }
   const shaderCode = typeof replacement === "string" ? replacement : replacement(located.shader.code)
   const codeChanges = shaderCode !== located.shader.code
   if (hasParams && located.shader.source === "external" && codeChanges) {
     throw new GodotReaderError("INVALID_PATCH", "Cannot atomically patch material params and a shared external Shader in one operation")
   }
   targetPath = hasParams ? inputPath : located.shader.path
-  if (options.expectedTarget !== undefined && targetPath !== options.expectedTarget) {
+  if (options.expectedTarget !== undefined && path.resolve(targetPath) !== path.resolve(options.expectedTarget)) {
     throw new GodotReaderError("UNEXPECTED_RESOURCE_CHANGE", "Shader target changed after plan resolution")
-  }
-  if (options.expectedHash !== undefined && options.expectedHash !== located.shader.hash) {
-    throw new GodotReaderError("SHADER_HASH_MISMATCH", "Shader differs from the expected source hash", {
-      details: { expected: options.expectedHash, actual: located.shader.hash },
-    })
   }
   const originalBytes = await readFile(targetPath)
   // Refuse to proceed if either input changed during resolution.

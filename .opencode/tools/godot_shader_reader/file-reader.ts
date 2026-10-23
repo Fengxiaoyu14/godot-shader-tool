@@ -1,3 +1,4 @@
+import { textMaterialParams } from "./text-material.ts"
 import { readFile, realpath, stat } from "node:fs/promises"
 import path from "node:path"
 
@@ -22,7 +23,7 @@ export interface ShaderFileReadResult {
   resource_hash?: string
   params?: ReturnType<typeof materialParams>
   container: ShaderReadResult["container"] | { format: "text" | "source"; uncompressed_size: number }
-  resource: ShaderReadResult["resource"] | { type: "Shader" | "ShaderMaterial"; format_version?: number }
+  resource: ShaderReadResult["resource"] | { type: "Shader" | "ShaderMaterial"; format_version?: number; version_major?: number }
   shader: {
     source: "embedded" | "external" | "standalone"
     path: string
@@ -86,16 +87,18 @@ export async function readGodotShaderFile(
   if (!parsed && ![".shader", ".gdshader"].includes(path.extname(input.path).toLowerCase())) {
     const inspected = inspectTextResource(decodeShaderUtf8(input.bytes))
     if (inspected.type === "ShaderMaterial") {
+      const text = decodeShaderUtf8(input.bytes)
+      const extra = options.params === false ? {} : { resource_hash: resourceHash(input.bytes), params: textMaterialParams(text, inspected) }
       if (!inspected.externalPath) {
         rejectUnusedOverride(options)
-        return { path: input.path, container: { format: "text", uncompressed_size: input.bytes.length },
+        return { path: input.path, ...extra, container: { format: "text", uncompressed_size: input.bytes.length },
           resource: { type: inspected.type, format_version: inspected.formatVersion },
           shader: { source: "embedded", path: input.path, code: inspected.code!, length: inspected.code!.length, hash: shaderHash(inspected.code!) } }
       }
       const resolved = await resolveDependency(inspected.externalPath, input.path, options)
       const dependency = await readRegularFile(resolved.path, true)
       const shader = readStandaloneShader(dependency.bytes, dependency.path, options.zstdDecoder)
-      return { path: input.path, container: { format: "text", uncompressed_size: input.bytes.length },
+      return { path: input.path, ...extra, ...(options.params === false ? {} : { params: textMaterialParams(text, inspected, shader.code) }), container: { format: "text", uncompressed_size: input.bytes.length },
         resource: { type: inspected.type, format_version: inspected.formatVersion },
         shader: { source: "external", path: dependency.path, resource_path: inspected.externalPath,
           ...(resolved.projectRoot ? { project_root: normalized(resolved.projectRoot) } : {}), overridden: options.shaderPath !== undefined,
@@ -104,11 +107,12 @@ export async function readGodotShaderFile(
   }
   rejectUnusedOverride(options)
   const shader = readStandaloneShader(input.bytes, input.path, options.zstdDecoder, parsed?.resource)
+  const sourceMajor = shader.format === "source" ? await sourceProjectMajor(input.path, options.projectRoot) : undefined
   return {
     path: input.path,
     container: parsed?.container ?? { format: shader.format, uncompressed_size: input.bytes.byteLength },
     resource: parsed ? describeBinaryResource(parsed.resource) : {
-      type: "Shader", ...(shader.format === "text" ? { format_version: inspectTextResource(decodeShaderUtf8(input.bytes)).formatVersion } : {}),
+      type: "Shader", ...(sourceMajor === undefined ? {} : { version_major: sourceMajor }), ...(shader.format === "text" ? { format_version: inspectTextResource(decodeShaderUtf8(input.bytes)).formatVersion } : {}),
     },
     shader: { source: "standalone", path: input.path, code: shader.code, length: shader.code.length, hash: shaderHash(shader.code) },
   }
@@ -238,5 +242,18 @@ function describeBinaryResource(model: BinaryResourceModel): ShaderReadResult["r
     type: model.type, version_major: model.versionMajor, version_minor: model.versionMinor,
     format_version: model.formatVersion, big_endian: model.bigEndian, use_real64: model.useReal64,
     external_resources: model.externalResources, internal_resources: model.internalResources,
+  }
+}
+
+async function sourceProjectMajor(filePath: string, explicitRoot?: string): Promise<number | undefined> {
+  const root = explicitRoot ?? await findProjectRoot(path.dirname(filePath))
+  if (!root) return undefined
+  try {
+    const project = await readFile(path.join(root, "project.godot"), "utf8")
+    const config = project.match(/^\s*config_version\s*=\s*(\d+)\s*$/m)?.[1]
+    return config === "5" ? 4 : config === "4" ? 3 : undefined
+  } catch (cause) {
+    if (isMissing(cause)) return undefined
+    throw new GodotReaderError("FILE_READ_FAILED", "Cannot inspect project version", { cause })
   }
 }

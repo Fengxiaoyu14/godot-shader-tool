@@ -12,6 +12,8 @@ interface PlanEntry {
   expected_hash?: string
   project_root?: string
   shader_path?: string
+  godot_version?: string
+  renderer?: string
 }
 
 /** Snapshot the plan once. Entry paths are relative to the plan, independent of cwd. */
@@ -34,6 +36,8 @@ export async function applyShaderPlan(planPath: string, options: ShaderFileWrite
       item.path = path.resolve(base, entry.path)
       item.options = {
         ...options,
+        ...(entry.godot_version === undefined ? {} : { godotVersion: entry.godot_version }),
+        ...(entry.renderer === undefined ? {} : { renderer: entry.renderer }),
         ...(entry.project_root === undefined ? {} : { projectRoot: path.resolve(base, entry.project_root) }),
         ...(entry.shader_path === undefined ? {} : { shaderPath: path.resolve(base, entry.shader_path) }),
       }
@@ -82,9 +86,9 @@ export async function applyShaderPlan(planPath: string, options: ShaderFileWrite
 function parseEntry(value: unknown): PlanEntry {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new GodotReaderError("INVALID_PLAN", "Plan entry must be an object")
   const entry = value as Record<string, unknown>
-  if (Object.keys(entry).some((key) => !["path", "ops", "expected_resource_hash", "expected_hash", "project_root", "shader_path"].includes(key)) ||
+  if (Object.keys(entry).some((key) => !["path", "ops", "expected_resource_hash", "expected_hash", "project_root", "shader_path", "godot_version", "renderer"].includes(key)) ||
       typeof entry.path !== "string" || entry.path.trim().length === 0 ||
-      ["project_root", "shader_path"].some((key) => entry[key] !== undefined && (typeof entry[key] !== "string" || !entry[key].trim())) ||
+      ["project_root", "shader_path", "godot_version", "renderer"].some((key) => entry[key] !== undefined && (typeof entry[key] !== "string" || !entry[key].trim())) ||
       (entry.expected_resource_hash !== undefined && (typeof entry.expected_resource_hash !== "string" || !/^[a-f0-9]{64}$/.test(entry.expected_resource_hash))) ||
       (entry.expected_hash !== undefined && (typeof entry.expected_hash !== "string" || !/^[a-f0-9]{64}$/.test(entry.expected_hash)))) {
     throw new GodotReaderError("INVALID_PLAN", "Invalid plan fields: require path, ops, optional expected_hash/project_root/shader_path")

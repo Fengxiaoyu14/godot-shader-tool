@@ -1,3 +1,5 @@
+import { prepareTextMaterialWrite } from "./text-material.ts"
+import { encodeUtf8Exact } from "./strings.ts"
 import { createHash } from "node:crypto"
 import { isDeepStrictEqual } from "node:util"
 import { parseResource, serializeResource, setShaderCode, validateContainerPreserved, type ParsedResource } from "./codec.ts"
@@ -43,6 +45,8 @@ export function materialParams(model: BinaryResourceModel, rootCode?: string) {
 }
 
 export function prepareMaterialWrite(original: Uint8Array, beforeCode: string, code: string, ops: ParamPatchOp[], options: ShaderFileWriteOptions): PreparedShaderWrite & { paramChanges: unknown[] } {
+  const magic = String.fromCharCode(...original.subarray(0, 4))
+  if (magic !== "RSRC" && magic !== "RSCC") return prepareTextMaterialWrite(original, beforeCode, code, ops)
   const before = parseResource(original, options.zstdDecoder)
   if (before.resource.type !== "ShaderMaterial") throw new GodotReaderError("NOT_SHADER_MATERIAL", "setParam requires a binary ShaderMaterial")
   const working = parseResource(original, options.zstdDecoder)
@@ -56,7 +60,7 @@ export function prepareMaterialWrite(original: Uint8Array, beforeCode: string, c
       if (op.setParam.type !== undefined && op.setParam.type !== p.value.type) throw new GodotReaderError("INVALID_PATCH", "setParam.type must match the existing Variant type")
       if ("expected_value" in op.setParam && !isDeepStrictEqual(op.setParam.expected_value, p.value.value)) throw new GodotReaderError("PATCH_EXPECT_MISMATCH", "Parameter old-value assertion failed")
       const old = structuredClone(p.value)
-      const value = checkedValue(p.value.type, op.setParam.value)
+      const value = checkedValue(p.value.type, op.setParam.value, working.resource.versionMajor === 4 && !!(working.resource.reservedFields[0]! & 4))
       p.value = { ...p.value, value }
       changes.push({ internal_resource_index: r.index, name: op.setParam.name, before: old, after: structuredClone(p.value) })
     }
@@ -73,16 +77,39 @@ export function prepareMaterialWrite(original: Uint8Array, beforeCode: string, c
   return { bytes, beforeCode, resourceType: before.resource.type, verify, paramChanges: changes }
 }
 
-function checkedValue(type: string, value: unknown): unknown {
+export function checkedValue(type: string, value: unknown, real64 = false): unknown {
   const fail = () => { throw new GodotReaderError("INVALID_PATCH", `Invalid or unsupported setParam value for ${type}`) }
   const finite = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v)
   const f32 = (v: number) => { const n = Math.fround(v); if (!Number.isFinite(n)) fail(); return n }
-  if (type === "real" || type === "double") { if (!finite(value)) return fail(); return type === "real" ? f32(value) : value }
+  if (type === "real" || type === "double") { if (!finite(value)) return fail(); return type === "real" && !real64 ? f32(value) : value }
   if (type === "int") { if (!finite(value) || !Number.isInteger(value) || value < -2147483648 || value > 2147483647) return fail(); return value }
   if (type === "bool") { if (typeof value !== "boolean") return fail(); return value }
-  if (type === "string") { if (typeof value !== "string") return fail(); return value }
-  const sizes: Record<string, number> = { color: 4, vector2: 2, vector3: 3, rect2: 4, plane: 4, quat: 4, aabb: 6, basis: 9, transform: 12, transform2d: 6 }
-  if (sizes[type]) { if (!Array.isArray(value) || value.length !== sizes[type] || !value.every(finite)) return fail(); return value.map(f32) }
+  if (type === "string" || type === "string_name") { if (typeof value !== "string") return fail(); encodeUtf8Exact(value); return value }
+  if (type === "int64") {
+    if (typeof value !== "string" || !/^-?(0|[1-9][0-9]*)$/.test(value) || BigInt(value) < -9223372036854775808n || BigInt(value) > 9223372036854775807n) return fail()
+    return BigInt(value).toString()
+  }
+  const integerSizes: Record<string, number> = { vector2i: 2, rect2i: 4, vector3i: 3, vector4i: 4 }
+  if (integerSizes[type]) {
+    if (!Array.isArray(value) || value.length !== integerSizes[type]) return fail()
+    return value.map(v => checkedValue("int", v))
+  }
+  const scalarArrays: Record<string, string> = { int_array: "int", int64_array: "int64", real_array: "real", double_array: "double", string_array: "string" }
+  if (scalarArrays[type]) {
+    if (!Array.isArray(value)) return fail()
+    return value.map(v => checkedValue(scalarArrays[type]!, v))
+  }
+  const tupleArrays: Record<string, string> = { vector2_array: "vector2", vector3_array: "vector3", vector4_array: "vector4", color_array: "color" }
+  if (tupleArrays[type]) {
+    if (!Array.isArray(value)) return fail()
+    return value.map(v => checkedValue(tupleArrays[type]!, v, real64))
+  }
+  if (type === "raw_array") {
+    if (!Array.isArray(value) || !value.every(v => Number.isInteger(v) && v >= 0 && v <= 255)) return fail()
+    return new Uint8Array(value)
+  }
+  const sizes: Record<string, number> = { color: 4, vector2: 2, vector3: 3, rect2: 4, plane: 4, quat: 4, aabb: 6, basis: 9, transform: 12, transform2d: 6, vector4: 4, projection: 16 }
+  if (sizes[type]) { if (!Array.isArray(value) || value.length !== sizes[type] || !value.every(finite)) return fail(); return real64 && type !== "color" ? value : value.map(f32) }
   return fail()
 }
 

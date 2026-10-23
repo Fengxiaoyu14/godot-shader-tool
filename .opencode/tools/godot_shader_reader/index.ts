@@ -1,4 +1,5 @@
 export { readGodot36Shader } from "./shader-reader.ts"
+export { readGodot36Shader as readGodotShader } from "./shader-reader.ts"
 export type { ShaderReadResult } from "./shader-reader.ts"
 export { readGodotShaderFile } from "./file-reader.ts"
 export type { ShaderFileReadOptions, ShaderFileReadResult } from "./file-reader.ts"

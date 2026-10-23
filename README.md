@@ -422,13 +422,13 @@ NUL supplied as source is rejected by the validated writer. No whitespace or
 line-ending normalization is introduced.
 
 `validate`, `write`, `write-patch` and `write-plan` accept `godot_version` and
-`renderer`, defaulting to `"3.6"` and `"gles3"`. The only bundled profile remains
-**Godot 3.6 GLES3**. Other combinations fail closed with
-`UNSUPPORTED_VALIDATOR_PROFILE`, listing supported profiles. These arguments
-reserve a selection boundary; they do not add Godot 3.5/4.x compilers, GLES2 or
-Godot 4 resource-format support. The native CLI remains fixed to its compiled
-profile. Shader validation still does not establish visual equivalence or a
-GPU performance improvement.
+`renderer`. Resource headers or the nearest project's config_version select
+Godot 3 or 4 automatically. Detached raw source and direct strings default to
+3.6; set `godot_version: "4.x"` for Godot 4. The bundled 3.6 compiler uses
+`gles3`; installed Godot 4.3+ uses `dummy`. Batch entries may override the plan's
+`godot_version` and `renderer`. Unsupported profiles fail closed. See the
+[feature audit](docs/GODOT-4-FEATURE-PARITY.md) for editing and comparison parity.
+Shader validation does not establish visual equivalence or GPU performance.
 
 ## Write safety
 
@@ -598,10 +598,11 @@ errors preserve the original bytes. Private material content is never committed.
 
 ## Current limits
 
-- Binary files: Godot 3.5/3.6 (`version_major=3`, `version_minor=5` or `6`,
-  `format_version=3`). Other engine or binary format versions remain rejected.
-- Shader validation still uses the bundled Godot 3.6 GLES3 compiler; supporting
-  3.5 file headers does not claim full Godot 3.5 shader-language validation.
+- Binary files: Godot 3.5/3.6 format 3 and Godot 4.x formats 3–6;
+  text formats 2–4. Unknown binary header flags or formats are rejected.
+- Godot 3 uses the bundled 3.6 GLES3 compiler; supporting 3.5 headers does not
+  claim full 3.5 language validation. Godot 4 needs an installed 4.3+ engine
+  (4.5.1 is the tested reference); see its setup and context limits above.
 - Little-endian resources only.
 - RSCC compression mode `2` (ZSTD) and uncompressed RSRC only.
 - The unused legacy `import_metadata_offset` header field is preserved exactly,
@@ -611,9 +612,10 @@ errors preserve the original bytes. Private material content is never committed.
   internal or external `Shader`. Standalone roots must be `Shader`; existing
   `code` must be a non-empty String. No resource creation is supported.
 - Deprecated embedded Image and InputEvent Variants are unsupported.
-- Text ShaderMaterial loading and recursive material references are not supported.
-- No Godot 4.x resource format, scene recursion, texture decoding, new
-  resources, or resource/property insertion/deletion.
+- Text ShaderMaterial reads, parameter diff/edits and embedded/external Shaders
+  are supported. Recursive external material references are not supported.
+- No scene recursion, texture decoding, new resources or arbitrary
+  resource/property insertion/deletion.
 - Bundled validator executables currently cover x64 Linux and x64 Windows.
 
 See [`docs/GODOT-3.6-FORMAT.md`](docs/GODOT-3.6-FORMAT.md) for binary layout and
@@ -629,9 +631,11 @@ reads). `params.materials` contains each internal ShaderMaterial, its
 property name, Variant `type`, `type_id`, and `value`. Color/vector values are
 numeric arrays; real/double retain their original binary Variant type. Each
 external texture parameter includes `external_resource: {id, type, path}`.
-`params.external_resources` maps **zero-based binary table ids** to paths and
+`params.external_resources` maps **zero-based table indices** to paths and
 `bindings: [{internal_resource_index, uniform}]`; inline references have `id: null`.
-These ids are not the one-based ids of text `.tres` files.
+For text materials these indices follow file order; they do not replace the
+original numeric/string IDs in the file. Godot 4 parameters use
+`shader_parameter/` instead of Godot 3 `shader_param/`.
 
 Each material has a lexical `uniforms` index with `assigned`, `source`, and
 `default_expression`, plus `unassigned_uniforms`. Nil/empty object parameters
